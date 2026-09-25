@@ -1,0 +1,39 @@
+# agent-config/models.yaml —— 模型配置（唯一事实源）
+
+> 规则：换供应商只改本文件。所有调用走 OpenAI 兼容协议（ADR-004）。
+> 密钥不进仓：从环境变量读（见各 endpoint 的 env_key）。
+
+version: 0
+updated: 2026-09-25
+
+defaults:
+  protocol: openai-compatible
+  timeout_s: 300
+  max_retries: 2
+
+roles:
+  writer:            # 产线模式的编辑模型（陪伴模式下此角色由宿主 agent 承担）
+    tier: strong
+    primary:   {provider: glm, model: "glm-4.x-flagship", env_key: GLM_API_KEY}
+    fallbacks:
+      - {provider: glm, model: "glm-4.x-lite", env_key: GLM_API_KEY}
+  reviewer:          # gate 评审（只读、禁延期、按 interaction-protocol §4.2 渲染）
+    tier: standard
+    primary:   {provider: glm, model: "glm-4.x-standard", env_key: GLM_API_KEY}
+    fallbacks:
+      - {provider: glm, model: "glm-4.x-flagship", env_key: GLM_API_KEY}   # 升档备配
+  aux:               # 摘要/压缩/出题等轻任务
+    tier: fast
+    primary:   {provider: glm, model: "glm-4.x-flash", env_key: GLM_API_KEY}
+
+providers:
+  glm:
+    base_url: "https://open.bigmodel.cn/api/paas/v4"   # OpenAI 兼容端点；内网部署改此处
+  # 备选供应商示例（启用时去掉注释并保证协议兼容）：
+  # openai:  {base_url: "https://api.openai.com/v1"}
+  # anthropic-compat: {base_url: "..."}
+
+auto_rules:   # 三条自动调控（harness/models.py 实现，不新增规则不写代码）
+  - id: tier-default        # ① writer 强档 / reviewer、aux 弱档（见 roles.tier）
+  - id: escalate-on-parse-fail   # ② gate 输出连续 2 次解析失败 → 升 reviewer 到 fallbacks[0] 重试 1 次
+  - id: endpoint-fallback   # ③ 端点错误（超时/5xx）→ 按序切换 fallbacks

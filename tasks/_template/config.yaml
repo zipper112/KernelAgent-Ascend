@@ -1,0 +1,23 @@
+# 任务运行配置
+version: 0
+
+arch: TEMPLATE-dav_2201-or-dav_3510     # get_npu_arch.py 检测值；npu-smi Chip Name 不可信
+dsl: triton-ascend                      # ADR-001；adapter 架构可扩展
+device_id: 0
+
+workload:
+  full_set: bench/workloads.yaml        # 全量集（promote 用）
+  repr_tag: repr                        # 代表集标记字段（L0/L1 用）
+  l0_smoke: 1                           # L0 冒烟取代表集前 N 个
+
+budget:
+  max_rounds: 42                        # 熔断①：全局轮次上限
+  max_direction_fails: 3                # 熔断②：同方向连续失败换向
+  stall_replan: 2                       # 熔断③：停滞 N 轮重规划（N+1 轮停机）
+  api_calls: 2000                       # 熔断④a
+  wall_clock_min: 720                   # 熔断④b
+
+measurement:
+  warmup: 3
+  samples: 5                            # 交错采样轮数
+  l2_cache_clear: true                  # akg l2_cache_clear 流程

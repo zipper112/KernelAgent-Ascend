@@ -1,0 +1,9 @@
+# workload 定义（全量集；行级 schema）
+# 每行：id 唯一 / axes 变量轴取值 / dtype / repr 是否代表集（L0/L1 用）
+workloads:
+  - {id: w01, axes: {batch: 1,  seq: 128,  hidden: 4096}, dtype: fp16, repr: true}
+  - {id: w02, axes: {batch: 1,  seq: 1024, hidden: 4096}, dtype: fp16, repr: true}
+  - {id: w03, axes: {batch: 8,  seq: 512,  hidden: 4096}, dtype: fp16, repr: true}
+  - {id: TEMPLATE-继续按算子 shape 域补齐}
+# 形状分布建议（竞赛经验）：代表集覆盖 tiny/mid/large 三段；全量集再加密；
+# Phase 3 的形状特化以本文件的 axes 聚类为输入。

@@ -1,0 +1,115 @@
+# 三轴索引 v0（knowledge/router/index.yaml）
+# 轴：symptom（症状）× op_family（算子族）× arch（硬件代际）
+# 数据源：本机 skill references 编目（deps/skills.yaml 登记）+ akg 内置 skill。
+# 完整编目在 Phase 3 完成；v0 覆盖试点所需（norm 族 + 通用诊断）。
+
+version: 0
+updated: 2026-09-25
+
+entries:
+  # ---- norm 族（试点 RMSNorm/LayerNorm）----
+  - id: norm-family-opt
+    skill: ascendc-performance-best-practices
+    ref: references/reduction/            # Norm/Softmax 优化文档与 5 套模板代码
+    symptom: [memory-bound, low-vec-ratio, mte2-bound]
+    op_family: [norm, softmax, reduce]
+    arch: both
+    kind: guide+template
+    confidence: team
+    perf_claim: {arch: dav_2201, dtype: fp16, shape: "hidden 4k-8k", metric: speedup, value: "见文档分档", source: skill-doc}
+
+  - id: triton-ascend-reduce-guide
+    skill: akg-built-in                   # akg_agents op/resources/skills/triton-ascend
+    ref: guides/reduce.md
+    symptom: [memory-bound]
+    op_family: [norm, reduce]
+    arch: dav_2201
+    kind: guide
+    confidence: team
+
+  - id: triton-ascend-reduction-case
+    skill: akg-built-in
+    ref: cases/                           # 23 个带场景标签案例中的 reduction 类
+    symptom: [memory-bound, tail-effect]
+    op_family: [reduce, norm]
+    arch: dav_2201
+    kind: case
+    confidence: team
+
+  - id: triton-ascend-api-rules
+    skill: akg-built-in
+    ref: fundamentals/api-rules.md
+    symptom: []                           # fundamental：无差别常驻（L0 注入层）
+    op_family: ["*"]
+    arch: dav_2201
+    kind: fundamental
+    confidence: team
+
+  - id: triton-ascend-hw-constraints
+    skill: akg-built-in
+    ref: fundamentals/ascend-hardware-constraints.md
+    symptom: []
+    op_family: ["*"]
+    arch: dav_2201
+    kind: fundamental
+    confidence: verified
+
+  # ---- 诊断链（通用）----
+  - id: msprof-collect-7groups
+    skill: ops-profiling
+    ref: references/msprof-guide.md
+    symptom: ["*"]                        # 采集入口：任何诊断前先读
+    op_family: ["*"]
+    arch: both
+    kind: threshold
+    confidence: verified
+
+  - id: bound-quickref
+    skill: ops-profiling
+    ref: references/optimization_quickref.md   # 10 类症状→修复映射 + 收益数字
+    symptom: [mte2-bound, cube-bound, vec-bound, scalar-bound, load-imbalance, bank-conflict, no-double-buffer, pipeline-bubble, low-l2-hit, cross-linked]
+    op_family: ["*"]
+    arch: both
+    kind: threshold
+    confidence: team
+    perf_claim: {arch: both, dtype: n/a, shape: n/a, metric: various, value: "如 UB 融合 20-50%、AIC:AIV 配平 30-40%", source: skill-doc}
+
+  - id: perf-optimize-flow
+    skill: ascendc-perf-optimize
+    ref: SKILL.md                         # 4 步调优流程：Tiling→卡间→核间→单核
+    symptom: ["*"]
+    op_family: ["*"]
+    arch: both
+    kind: guide
+    confidence: team
+
+  # ---- 故障诊断（通用）----
+  - id: crash-quickref
+    skill: ascendc-crash-debug
+    ref: SKILL.md                         # 卡死/崩溃/aic error 速查表
+    symptom: [hang, aic-error, illegal-memory]
+    op_family: ["*"]
+    arch: both
+    kind: threshold
+    confidence: team
+
+  - id: precision-quickref
+    skill: ascendc-precision-debug
+    ref: SKILL.md                         # 全 0/随机值/rtol-atol 不达标决策树
+    symptom: [all-zero-output, random-output, tolerance-fail]
+    op_family: ["*"]
+    arch: both
+    kind: threshold
+    confidence: team
+
+  - id: runtime-errcodes
+    skill: ascendc-runtime-debug
+    ref: SKILL.md                         # 507035/161xxx/561xxx 错误码表
+    symptom: [runtime-error]
+    op_family: ["*"]
+    arch: both
+    kind: threshold
+    confidence: team
+
+# 检索：python knowledge/router/query.py --symptom mte2-bound --op-family norm --arch dav_2201
+# 打分：title命中 +10 > tag命中 +5 > body命中（≤3 次）；别名表见 query.py ALIASES。

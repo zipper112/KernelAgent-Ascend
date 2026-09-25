@@ -1,0 +1,24 @@
+# 任务契约（从 knowledge/prompts/contract-template.md 的 8 槽填充；占位符必须全替换）
+contract:
+  task_name: TEMPLATE-REPLACE-ME
+  op_family: TEMPLATE-REPLACE-ME        # norm|matmul|attention|reduce|elementwise|sort|moe
+  objective: TEMPLATE-REPLACE-ME
+  correctness:
+    verifier: kda-verify
+    tolerance_ref: "dtype 分级：fp16 0.004 / bf16 0.03 / int8 0.01 / 其他 0.02"
+    special_behaviors: []
+  performance:
+    baseline: TEMPLATE-REPLACE-ME       # 可锁定的调用方式/版本
+    target: "exploratory"               # Phase 1 结束回填具体值
+    noise_floor: 0.05
+  allowed:
+    dsl: [triton-ascend]
+    forbidden:
+      - "不得修改 bench/ 与 baseline/"
+      - "不得引入闭源二进制依赖"
+      - "不得绕过 kda verify 自建验证"
+  validation_cmd: "kda verify --candidate <id> --workload-set full"
+  evaluation_cmd: "kda bench --candidate <id> --mode l1"
+  promotion:
+    gate: promote-seven-checks
+    extra: "全量正确性 + l1 加速达标且超 noise_floor"

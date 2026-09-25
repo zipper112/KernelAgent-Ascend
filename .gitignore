@@ -1,0 +1,32 @@
+# 生成物与大文件：不入仓
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# 任务运行产物：证据链小文件入仓（docs/ 下 csv/jsonl/audit），以下为可再生成的大文件
+tasks/*/run/
+tasks/*/profile/
+profile/
+runs/
+outputs/
+*.ncu-rep
+*.npz
+*.npy
+*.pt
+*.csv.tmp
+
+# msprof 输出
+mindstudio_profiler_output/
+PROF_*/
+
+# 本地环境与密钥：绝不入仓
+.env
+agent-config/local*.yaml
+*.apikey
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
