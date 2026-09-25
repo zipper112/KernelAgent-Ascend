@@ -61,6 +61,8 @@ def _ssh_base(target: RemoteTarget) -> list[str]:
 
 def _q(p: str) -> str:
     """远端路径引用：~ 前缀换成 $HOME/ 再 quote 余下部分（单引号会冻结 ~ 展开）。"""
+    if p == "~":
+        return "$HOME"
     if p.startswith("~/"):
         return f"$HOME/{shlex.quote(p[2:])}"
     return shlex.quote(p)

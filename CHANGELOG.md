@@ -2,6 +2,22 @@
 
 本项目的显著变更记录。格式参考 Keep a Changelog，版本 tag 打在 git 上。
 
+## [unreleased] - 2026-09-25（全功能单元测试套件：期望先行，45→140 项）
+
+### Added
+- **七批离线单测**（不依赖 SSH/NPU/网络；CPU torch + NPU 桩 + mock subprocess）：test_runner_offline（24，compare 四步协议全分支/load_kernel 双布局/oracle 回退数学/run_verify 异常与防污染/run_bench speedup/_time_fn 调用序/main 落盘）、test_sync_transport（16，_q/push 三段/pull tar 打平/run_job staging 两源合流与 stage 标注）、test_executor（15，rc124/127 错误契约/banner 清洗/probe checks/LocalExecutor）、test_tools（14，五脚本纯函数含 resolve_closure 选轮与 detect_archs 负 lookahead）、test_router_unit（14，**回退解析与 yaml 等价**/别名归一/score 分支直测/_op_tokens 词元）、test_secrets（7，打码/env 优先/三分支）、test_cli（3，桩契约 rc=2）。每用例 docstring 写明「给定→当→则」。
+
+### Fixed（测试挖出的 6 个真产品缺陷）
+- runner.make_inputs 轴序语义错：sorted 得 [batch,hidden,seq]，归约维错位（冒烟一直在测错 shape）→ canonical 序 batch,seq,hidden；
+- sync._q("~") 把裸 ~ 冻结成 '~' → $HOME；
+- executor.probe torch_npu 检查切错段（查 PY 段而非 TORCHNPU 段，恒 ok 假阳性）；
+- query.load_index 回退解析不剥行内注释 → 与 yaml 路径数据不一致（等价测试防线首次上岗即命中）；
+- query.expand_symptoms 不归一同义词（mem-bound/memory-bound 并存稀释打分）；
+- query._op_tokens：旧 `[_v0-9]+` 全局拆 v/数字产生脏词元（accumulate_nv2→'n'）且不小写（RMSNorm 失配）→ 只剥尾部版本段 + 驼峰整体小写（对齐真实 1210 条命名实测）。
+
+### 验证
+- `pytest tests/ -q`：140 全绿；真机冒烟复验（device 7 + ascend-triton 镜像）verify 3/3 + bench 出数，产品改动无端到端回归。
+
 ## [unreleased] - 2026-09-25（轻量官方镜像通道 + device 7 多卡验证）
 
 ### Added

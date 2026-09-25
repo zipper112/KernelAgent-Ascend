@@ -48,7 +48,7 @@ def load_index() -> list[dict]:
         return [dict(e, ref=e.get("path", e.get("ref", ""))) for e in data.get("entries", [])]
     except ImportError:
         pass
-    # 无 PyYAML 时的行级回退解析
+    # 无 PyYAML 时的行级回退解析（v0.1 修复：剥行内注释，与 yaml 路径行为一致）
     entries: list[dict] = []
     cur: dict | None = None
     kv = re.compile(r"^\s*-?\s*([\w][\w-]*):\s*(.+?)\s*$")
@@ -63,6 +63,7 @@ def load_index() -> list[dict]:
         if not m:
             continue
         key, raw = m.group(1), m.group(2).strip()
+        raw = raw.split(" #")[0].strip()          # 剥行内注释（yaml 语义）
         if raw.startswith("[") and raw.endswith("]"):
             val = [v.strip().strip('"').strip("'") for v in raw[1:-1].split(",") if v.strip()]
         else:
@@ -76,11 +77,14 @@ def load_index() -> list[dict]:
 
 
 def expand_symptoms(symptoms: list[str]) -> list[str]:
+    """口语词 → 规范词归一（v0.1 修复：同义词合并，原词不再重复保留——
+    重复词会稀释打分且让命中判定把没归一的词当独立症状）。"""
     out = []
     for s in symptoms:
-        out.append(s)
-        out.append(ALIASES.get(s, s))
-    return [s for s in dict.fromkeys(out)]
+        canon = ALIASES.get(s, s)
+        if canon not in out:
+            out.append(canon)
+    return out
 
 
 def score_entry(entry: dict, args: argparse.Namespace) -> int | None:
@@ -138,6 +142,17 @@ def score_entry_impl(entry: dict, args: argparse.Namespace) -> int | None:
     return score
 
 
+_VERSION_SUFFIX = re.compile(r"(?:_v|_)[0-9]+(?:_[0-9]+)*$")   # add_v2 / all_gather_matmul_v3 / a_1_2 尾部版本
+
+
+def _op_tokens(op_name: str) -> set[str]:
+    """生产代码层词元拆分（--production 精确匹配用）：rms_norm ⊃ "norm"；random_normal ⊉ "norm"（子串不算）。
+    v0.1 修正（对齐真实 1210 条命名）：只剥**尾部版本段**（add_v2→add；accumulate_nv2 是历史名不是版本，
+    保 nv2 词元），驼峰整体小写（RMSNorm→rmsnorm），空词元丢弃。"""
+    base = _VERSION_SUFFIX.sub("", op_name)
+    return {t.lower() for t in base.split("_") if t}
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--symptom", nargs="*", default=[], help="症状词（支持别名，见 ALIASES）")
@@ -172,7 +187,7 @@ def main() -> int:
         for e in pdata.get("entries", []):
             if args.arch and e.get("archs") != ["both"] and args.arch not in e.get("archs", []):
                 continue
-            tokens = set(re.split(r"[_v0-9]+", e["op"]))
+            tokens = _op_tokens(e["op"])
             if fam not in tokens:
                 continue
             exact.append({**e, "id": f"prod:{e['op']}", "skill": f"cann-ops:{e['repo']}",

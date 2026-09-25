@@ -87,7 +87,7 @@ class RemoteExecutor:
         checks = {
             "npu": "910B4" if "910B4" in out else ("present" if "npu-smi" in out else "none"),
             "cann_toolkit": "missing" if "no-cann-toolkit" in out else "ok",
-            "torch_npu": "missing" if ("No module" in out.split("---TORCHNPU---")[0].split("---PY---")[-1] or "Error" in out.split("---TORCHNPU---")[0].split("---PY---")[-1]) else "ok",
+            "torch_npu": "missing" if ("No module" in out.split("---TORCHNPU---")[-1].split("---TRITON---")[0] or "Error" in out.split("---TORCHNPU---")[-1].split("---TRITON---")[0]) else "ok",
             "triton": "missing" if ("No module" in out.split("---TRITON---")[-1] or "Error" in out.split("---TRITON---")[-1]) else "ok",
         }
         return {"reachable": r["ok"], "checks": checks, "raw": out}

@@ -54,8 +54,15 @@ def load_reference(payload: Path):
     return reference
 
 
+_CANON_AXES = ("batch", "seq", "hidden")   # 任务语义序：hidden 必须最后（归约维）
+
+
 def make_inputs(workload: dict, torch):
-    shape = [workload["axes"][k] for k in sorted(workload["axes"])]
+    """axes → shape：canonical 序（batch,seq,hidden）优先，其余按键名字典序补尾。
+    （v0.1 修正：纯 sorted 会得到 batch,hidden,seq —— 归约维跑到倒数第二，测错轴。）"""
+    axes = workload["axes"]
+    order = [k for k in _CANON_AXES if k in axes] + sorted(k for k in axes if k not in _CANON_AXES)
+    shape = [axes[k] for k in order]
     dtype = getattr(torch, "float16") if workload.get("dtype", "fp16") == "fp16" else getattr(torch, "bfloat16")
     inp = torch.randn(*shape, dtype=torch.float32).to(dtype).npu()
     return [inp]
