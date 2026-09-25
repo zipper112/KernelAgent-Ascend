@@ -73,5 +73,50 @@ def test_pilot_critical_paths():
         assert (ROOT / p).exists(), p
 
 
+CANN_OPS = ROOT / "third_party" / "cann-ops"
+needs_cann_ops = pytest.mark.skipif(
+    not CANN_OPS.exists(),
+    reason="重资产 cann-ops 未 bootstrap（python tools/sync_assets.py --bootstrap-cann-ops）——迁移新机器后跑一次即可")
+
+
+@needs_cann_ops
+def test_production_index_exists_and_valid():
+    """生产代码层（ADR-009）：索引存在、条目 ≥1000、抽查路径存在、rms_norm 命中。"""
+    import yaml
+    pidx = ROOT / "knowledge" / "router" / "production-index.yaml"
+    assert pidx.exists(), "production-index.yaml 缺失（跑 tools/build_production_index.py）"
+    data = yaml.safe_load(pidx.read_text(encoding="utf-8"))
+    entries = data["entries"]
+    assert len(entries) >= 1000, f"生产条目应 ≥1000，当前 {len(entries)}"
+    # 抽查 20 条路径存在（含首个/末个/随机）
+    import random
+    sample = entries[:5] + entries[-5:] + random.sample(entries, 10)
+    broken = [e["op"] for e in sample if not (ROOT / e["path"]).exists()]
+    assert not broken, f"生产索引断链: {broken}"
+    # 试点关键命中
+    rms = [e for e in entries if e["op"] in ("rms_norm", "add_rms_norm", "layer_norm")]
+    assert rms, "rms_norm/layer_norm 生产实现未命中"
+
+
+@needs_cann_ops
+def test_production_joint_query():
+    """query.py --production 联合检索：词元精确匹配（norm 族命中，无 random/abs 误入）。"""
+    import subprocess, sys
+    r = subprocess.run([sys.executable, str(ROOT / "knowledge" / "router" / "query.py"),
+                        "--op-family", "norm", "--production", "--compact"],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0
+    prod_lines = [l for l in r.stdout.splitlines() if "prod:" in l]
+    assert prod_lines, "生产条目未出现在联合检索"
+    assert any("add_rms_norm" in l for l in prod_lines), "add_rms_norm 未命中"
+    for l in prod_lines:
+        assert "random" not in l.split("prod:")[1][:40], f"误命中: {l}"
+    # 无 --production 时不出现
+    r2 = subprocess.run([sys.executable, str(ROOT / "knowledge" / "router" / "query.py"),
+                         "--op-family", "norm", "--compact"],
+                        capture_output=True, text=True, timeout=60)
+    assert "prod:" not in r2.stdout
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

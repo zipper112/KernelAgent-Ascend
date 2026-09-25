@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -38,12 +39,74 @@ def parse_manifest() -> list[dict]:
     return data.get("assets", [])
 
 
-def source_path(name: str, group: str) -> Path | None:
-    if group == "akg":
-        return AKG_SKILLS / name
-    if group == "third_party":
-        return AKG_CODE / "op" if name == "akg-verifier-code" else None
-    return LOCAL_SKILL_ROOT / name
+CANN_OPS_REPOS = {
+    # 三大仓：vendor 时取算子目录（KEEP），剥 tests/docs/cmake/scripts/examples/torch_extension/build 基建
+    "ops-transformer": ["attention", "ffn", "gmm", "mamba", "mc2", "mhc", "moe", "posembedding",
+                        "common", "experimental"],
+    "ops-nn": ["activation", "common", "control", "conv", "experimental", "foreach", "hash",
+               "index", "loss", "matmul", "norm", "optim", "pooling", "quant", "rnn", "vfusion"],
+    "ops-math": ["conversion", "math", "random", "common", "experimental"],
+}
+CANN_OPS_SMALL = ["ops-blas", "ops-collections", "ops-cv", "ops-fft", "ops-sparse", "ops-gnn"]
+CANN_OPS_META = ["LICENSE", "README.md", "CHANGELOG.md", "classify_rule.yaml", "version.cmake",
+                 "version.info", "Third_Party_Open_Source_Software_List.yaml",
+                 "Third_Party_Open_Source_Software_Notice"]
+
+
+def bootstrap_cann_ops(proxy: str | None) -> int:
+    """重资产重建（ADR-009 修订版）：拉取十仓 → 剥 tests → 组装 third_party/cann-ops → 重建 production-index。
+
+    本地 third_party/cann-ops/ 不入 git（.gitignore）；迁移新机器后跑本命令即恢复生产代码层。
+    """
+    import shutil
+    import subprocess as sp
+
+    dest_root = ROOT / "third_party" / "cann-ops"
+    if dest_root.exists():
+        print(f"已存在 {dest_root}（如需重建先手动删除）")
+        return 1
+    env = dict(os.environ)
+    if proxy:
+        env["https_proxy"] = env["http_proxy"] = proxy
+    tmp = ROOT / "third_party" / ".cann-ops-tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+
+    def run(cmd: list[str]) -> None:
+        r = sp.run(cmd, env=env, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit(f"命令失败 {cmd[0]}: {r.stderr[:300]}")
+
+    for repo, families in CANN_OPS_REPOS.items():
+        print(f"[bootstrap] clone {repo} ...")
+        run(["git", "clone", "--depth", "1", f"https://gitcode.com/cann/{repo}.git", str(tmp / repo)])
+        dest = dest_root / repo
+        dest.mkdir(parents=True)
+        for fam in families:
+            src = tmp / repo / fam
+            if src.exists():
+                shutil.copytree(src, dest / fam)
+        for meta in CANN_OPS_META:
+            src = tmp / repo / meta
+            if src.exists():
+                shutil.copy2(src, dest / meta)
+    small = dest_root / "small"
+    small.mkdir(parents=True)
+    for repo in CANN_OPS_SMALL:
+        print(f"[bootstrap] clone {repo} ...")
+        run(["git", "clone", "--depth", "1", f"https://gitcode.com/cann/{repo}.git", str(tmp / repo)])
+        shutil.copytree(tmp / repo, small / repo, ignore=shutil.ignore_patterns(".git"))
+    # 剥 tests（体积大头）
+    n = 0
+    for d in dest_root.rglob("*"):
+        if d.is_dir() and d.name in ("tests", "test", "ut", "st"):
+            shutil.rmtree(d)
+            n += 1
+    print(f"[bootstrap] 剥除 {n} 个 tests 目录")
+    shutil.rmtree(tmp)
+    # 重建索引
+    run([sys.executable, str(ROOT / "tools" / "build_production_index.py")])
+    print(f"[bootstrap] 完成：{dest_root}（重建索引见上）")
+    return 0
 
 
 def main() -> int:
@@ -51,11 +114,17 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="对比外部源与仓内 hash，输出 diff 报告")
     ap.add_argument("--sync", metavar="NAME", help="重拉指定资产（默认仅报告，--apply 才落盘）")
     ap.add_argument("--apply", action="store_true", help="配合 --sync 真正写入")
+    ap.add_argument("--bootstrap-cann-ops", action="store_true",
+                    help="重建重资产 third_party/cann-ops（拉十仓+剥tests+建索引；迁移新机器后跑）")
+    ap.add_argument("--proxy", default=None, help="代理地址（如 http://127.0.0.1:7897）")
     args = ap.parse_args()
+
+    if args.bootstrap_cann_ops:
+        return bootstrap_cann_ops(args.proxy)
 
     assets = parse_manifest()
     if not any([args.check, args.sync]):
-        ap.error("--check 或 --sync 必选其一")
+        ap.error("--check、--sync 或 --bootstrap-cann-ops 必选其一")
 
     if args.check:
         diffs, missing_src, ok = [], [], 0

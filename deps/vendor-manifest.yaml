@@ -6,6 +6,7 @@ updated: 2026-09-25
 sources:
   local-skills: "C:/Users/11565/.agents/skills/<name>（团队内部 skill 快照，license: team-internal）"
   akg: "https://gitcode.com/mindspore/akg.git br_agents @5aa15f3（Apache-2.0）"
+  cann-ops: "https://gitcode.com/cann/<repo> 十仓 master 浅克隆 2026-09-25（CANN OSL 2.0，ADR-009；索引 knowledge/router/production-index.yaml）"
 groups:
   core: "跨路线诊断/验证/调优件"
   triton-ascend: "Triton 主路线"
@@ -92,3 +93,7 @@ assets:
   - {name: triton-ascend, group: akg, path: knowledge/skills/akg/triton-ascend, tree_sha256: 7427342c624cc7f8}
   - {name: triton-cuda, group: akg, path: knowledge/skills/akg/triton-cuda, tree_sha256: 56744b4d0b52499d}
   - {name: akg-verifier-code, group: third_party, path: third_party/akg, tree_sha256: 4f6bbd2521620f07, pinned: 5aa15f3}
+  - {name: cann-ops-transformer, group: cann-ops, path: third_party/cann-ops/ops-transformer, tree_sha256: 65cf33b9e5715873, license: "CANN OSL 2.0"}
+  - {name: cann-ops-nn, group: cann-ops, path: third_party/cann-ops/ops-nn, tree_sha256: 6dd2a15a2e121e7a, license: "CANN OSL 2.0"}
+  - {name: cann-ops-math, group: cann-ops, path: third_party/cann-ops/ops-math, tree_sha256: 27bf7e3ca0ff53f3, license: "CANN OSL 2.0"}
+  - {name: cann-ops-small-6repos, group: cann-ops, path: third_party/cann-ops/small, tree_sha256: 906bd477d093a8f8, license: "CANN OSL 2.0"}

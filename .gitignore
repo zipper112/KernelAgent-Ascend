@@ -41,3 +41,7 @@ agent-config/local*.yaml
 .vscode/
 .idea/
 .DS_Store
+
+# 重资产：cann/ops-* 生产代码 vendor 层（474M，ADR-009 修订：不入 git 历史）
+# 重建：python tools/sync_assets.py --bootstrap-cann-ops（拉取+剥tests+建索引，约几分钟）
+third_party/cann-ops/

@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 INDEX_PATH = Path(__file__).parent / "index.yaml"
+PROD_INDEX_PATH = Path(__file__).parent / "production-index.yaml"   # 生产代码层（KernelWiki 式）
 
 # 别名表：常见口语词 → 索引规范词（KernelWiki 别名扩展的简化版）
 ALIASES = {
@@ -145,6 +146,8 @@ def main() -> int:
     p.add_argument("--kind", default=None, help="guide|case|template|threshold|fundamental")
     p.add_argument("--entry", default=None, help="按 id 精确取")
     p.add_argument("--list-fundamentals", action="store_true")
+    p.add_argument("--production", action="store_true",
+                   help="联合检索生产代码索引（cann-ops vendor 层）；--op-family 会自动追加")
     p.add_argument("--compact", action="store_true")
     args = p.parse_args()
 
@@ -157,24 +160,47 @@ def main() -> int:
         print(f"{{\"error\": \"index not found: {INDEX_PATH}\"}}")
         return 2
 
+    # 生产代码层联合检索（仅 --production 显式开启）
+    # 匹配规则：算子名按 _ 拆词元——词元完全等于 family（rms_norm ⊃ "norm"）才算核心命中；
+    # 子串包含（random_normal 的 "normal" ≠ "norm"）不算，杜绝 abs/random 类误入。
+    prod_entries: list[dict] = []
+    if args.production and args.op_family and PROD_INDEX_PATH.exists():
+        import yaml as _y
+        pdata = _y.safe_load(PROD_INDEX_PATH.read_text(encoding="utf-8"))
+        fam = args.op_family
+        exact = []
+        for e in pdata.get("entries", []):
+            if args.arch and e.get("archs") != ["both"] and args.arch not in e.get("archs", []):
+                continue
+            tokens = set(re.split(r"[_v0-9]+", e["op"]))
+            if fam not in tokens:
+                continue
+            exact.append({**e, "id": f"prod:{e['op']}", "skill": f"cann-ops:{e['repo']}",
+                          "ref": e["path"], "symptom": [], "kind": e.get("kind", "op"),
+                          "op_family": [fam], "arch": ",".join(e.get("archs", [])),
+                          "confidence": "verified"})
+        prod_entries = exact[:15]
+
     scored = []
     for e in entries:
         s = score_entry_impl(e, args)
         if s is not None:
             scored.append((s, e))
     scored.sort(key=lambda t: -t[0])
+    # 方法论条目在前；生产代码命中追加在后（词元精确匹配，无 fuzzy）
+    final = scored + [(0, pe) for pe in prod_entries]
 
-    if not scored:
+    if not final:
         print('{"hits": 0, "note": "NO MATCH -> trigger blindspot-declaration clause"}')
         return 1
 
     if args.compact:
-        for _, e in scored:
+        for _, e in final:
             print(f"[{e.get('kind','?')}] {e.get('id')}: {e.get('skill')} -> {e.get('ref')}")
     else:
         import json
         hits = [{k: e.get(k) for k in ("id", "skill", "ref", "symptom", "op_family", "arch", "kind", "confidence")}
-                for _, e in scored]
+                for _, e in final]
         print(json.dumps({"hits": len(hits), "entries": hits}, ensure_ascii=False, indent=2))
     return 0
 

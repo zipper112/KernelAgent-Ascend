@@ -77,6 +77,16 @@ def check_vendored_assets() -> None:
         record("知识索引 ref 仓内可解析", "fail", str(e)[:100])
     pin = ROOT / "third_party" / "akg" / "PINNED_COMMIT"
     record("akg 钉版标记", "ok" if pin.exists() else "fail", pin.read_text().strip() if pin.exists() else "缺失")
+    # 重资产层（cann-ops 不入 git，ADR-009 修订；缺失=可恢复 pending 而非 fail）
+    cann_ops = ROOT / "third_party" / "cann-ops"
+    pidx = ROOT / "knowledge" / "router" / "production-index.yaml"
+    if cann_ops.exists():
+        record("生产代码层（cann-ops）", "ok", f"{sum(1 for _ in cann_ops.iterdir())} 仓已 bootstrap")
+    elif pidx.exists():
+        record("生产代码层（cann-ops）", "warn",
+               "实体未拉取（索引在仓）：python tools/sync_assets.py --bootstrap-cann-ops 重建（约几分钟+474M）")
+    else:
+        record("生产代码层（cann-ops）", "warn", "索引与实体均缺：检查 tools/build_production_index.py")
 
 
 def check_router() -> None:

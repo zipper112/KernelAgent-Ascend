@@ -12,7 +12,7 @@
 | B-4 | 核间流水（inter-core pipeline）知识目录为空 | —（源 skill 自承认） | 源 skill 该查询返回"暂未收录" |
 | B-5 | LLM 级 NPU trace 分析（多算子/框架级 profiling 下钻） | — | 对标物 llm-torch-profiler-analysis 是纯 NVIDIA 版；torch-ops-profiler 只覆盖单算子级 |
 | B-6 | MC²（多机通信融合）实战案例 | — | ascendc-mc2-best-practice 有知识但缺带数字案例；隔离测试流程在 ascendc-perf-optimize |
-| B-7 | CANNBot 官方知识卡（5040 张） | — | ADR-005：license 审查前不引入 |
+| B-7 | CANNBot 官方知识卡（5040 张） | — | **部分解决**：生产实现层已由 cann/ops-* 十仓 vendor + production-index（1210 条，ADR-009）补齐；CANNBot 知识卡本体仍按 ADR-005 评估（低优先——生产层已覆盖主要价值） |
 
 ## filling
 
