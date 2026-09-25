@@ -1,39 +1,50 @@
 # agent-config/models.yaml —— 模型配置（唯一事实源）
 
-> 规则：换供应商只改本文件。所有调用走 OpenAI 兼容协议（ADR-004）。
-> 密钥不进仓：从环境变量读（见各 endpoint 的 env_key）。
+> 规则：换供应商只改本文件；密钥不进仓（读 agent-config/local-secrets.yaml 或环境变量 GLM_API_KEY）。
+> 端点已实测（2026-09-25）：glm-5.3-flash 经 coding/paas/v4 返回 200。
 
-version: 0
+version: 1
 updated: 2026-09-25
 
 defaults:
-  protocol: openai-compatible
+  protocol: openai-compatible            # OpenAI Chat Completion 协议
+  base_url: "https://open.bigmodel.cn/api/coding/paas/v4"
   timeout_s: 300
-  max_retries: 2
+  max_retries: 2                         # 仅网络类错误重试；402/429 见 budget（绝不盲目重试烧钱）
+  max_tokens_per_call: 8192              # 轮级：单次回复上限
+  context_window: 250000                 # 上下文窗超参（用户上限）；compact.py 以 0.8x 为软压缩线
+
+# ---- 预算防护（Budget Guard，详见 docs/design/interaction-protocol.md §7）----
+budget:
+  soft_limit_tokens: 40000000            # 软限：达到后每轮 reminder，建议人工评估
+  hard_limit_tokens: 60000000            # 硬限：达到即 checkpoint 暂停（paused-budget）
+  usage_ledger: "run/usage.jsonl"        # 本地记账（prompt/completion/总累计），不依赖服务商账单
+  on_quota_error: checkpoint-pause       # 402/429 → 存状态退出码 0，配额恢复后断点续跑
 
 roles:
-  writer:            # 产线模式的编辑模型（陪伴模式下此角色由宿主 agent 承担）
+  writer:            # 产线模式编辑模型（陪伴模式由宿主 agent 承担）
     tier: strong
-    primary:   {provider: glm, model: "glm-4.x-flagship", env_key: GLM_API_KEY}
+    primary:   {provider: glm, model: "glm-5.3", env_key: GLM_API_KEY}
     fallbacks:
-      - {provider: glm, model: "glm-4.x-lite", env_key: GLM_API_KEY}
-  reviewer:          # gate 评审（只读、禁延期、按 interaction-protocol §4.2 渲染）
-    tier: standard
-    primary:   {provider: glm, model: "glm-4.x-standard", env_key: GLM_API_KEY}
+      - {provider: glm, model: "glm-5.3-flash", env_key: GLM_API_KEY}
+  reviewer:          # gate 评审（只读；prompt 由 interaction-protocol §4.2 渲染）
+    tier: strong     # 评审用强档：解析契约严格，弱档实测解析失败率高（Phase 1 起观察调参）
+    primary:   {provider: glm, model: "glm-5.3", env_key: GLM_API_KEY}
     fallbacks:
-      - {provider: glm, model: "glm-4.x-flagship", env_key: GLM_API_KEY}   # 升档备配
-  aux:               # 摘要/压缩/出题等轻任务
+      - {provider: glm, model: "glm-5.3-flash", env_key: GLM_API_KEY}
+  aux:               # 摘要/压缩/测验等轻任务
     tier: fast
-    primary:   {provider: glm, model: "glm-4.x-flash", env_key: GLM_API_KEY}
+    primary:   {provider: glm, model: "glm-5.3-flash", env_key: GLM_API_KEY}
 
 providers:
   glm:
-    base_url: "https://open.bigmodel.cn/api/paas/v4"   # OpenAI 兼容端点；内网部署改此处
-  # 备选供应商示例（启用时去掉注释并保证协议兼容）：
-  # openai:  {base_url: "https://api.openai.com/v1"}
-  # anthropic-compat: {base_url: "..."}
+    base_url: "https://open.bigmodel.cn/api/coding/paas/v4"
+    key_file: "agent-config/local-secrets.yaml"   # 优先级：环境变量 > key_file
+  # 备选端点（同 key，协议切换时用）：
+  #   anthropic:      https://open.bigmodel.cn/api/anthropic
+  #   openai_response: https://open.bigmodel.cn/api/v1
 
-auto_rules:   # 三条自动调控（harness/models.py 实现，不新增规则不写代码）
-  - id: tier-default        # ① writer 强档 / reviewer、aux 弱档（见 roles.tier）
-  - id: escalate-on-parse-fail   # ② gate 输出连续 2 次解析失败 → 升 reviewer 到 fallbacks[0] 重试 1 次
-  - id: endpoint-fallback   # ③ 端点错误（超时/5xx）→ 按序切换 fallbacks
+auto_rules:   # 三条自动调控（harness/models.py 实现；新增规则必须走 ADR）
+  - id: tier-default                    # ① writer/reviewer 强档、aux 弱档
+  - id: escalate-on-parse-fail          # ② gate 输出连续 2 次解析失败 → 切 fallbacks[0] 重试 1 次
+  - id: endpoint-fallback               # ③ 网络类错误按序切 fallbacks；402/429 不重试、走 budget.on_quota_error

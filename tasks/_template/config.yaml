@@ -16,6 +16,15 @@ budget:
   stall_replan: 2                       # 熔断③：停滞 N 轮重规划（N+1 轮停机）
   api_calls: 2000                       # 熔断④a
   wall_clock_min: 720                   # 熔断④b
+  token_budget: 20000000                # 熔断④c：任务级 token 上限（Budget Guard）
+
+# 远程执行（infra/remote；本地跑则 enabled: false）
+execution:
+  remote:
+    enabled: false                      # true 时 verify/bench/diagnose 经 RemoteExecutor 跑
+    jump: jump                          # ~/.ssh/config 跳板条目
+    host: yq-e15                        # 目标机（8×910B4）
+    workdir: "~/kda-ascend"             # 远程工作区根（push 代码/任务定义，pull 证据摘要）
 
 measurement:
   warmup: 3

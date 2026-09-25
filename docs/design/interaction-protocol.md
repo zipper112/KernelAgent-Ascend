@@ -135,3 +135,38 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 | 预算 | API 调用数或墙钟超 config.yaml | 终止，保存断点（可续跑） |
 
 所有熔断事件写 audit.log（actor=harness, action=fuse）并在 status 中可见。
+
+## 7. Budget Guard：套餐防护与断点保存协议（v0.1 增补）
+
+**原则：配额是可恢复的中断，不是崩溃。任何耗尽场景必须以"状态已保存、进程体面退出（码 0）"收场。**
+
+### 7.1 三级预算（models.yaml `budget` 段 + 任务 config.yaml `budget` 段）
+
+| 级 | 参数 | 触发动作 |
+|---|---|---|
+| 套餐-软限 | `soft_limit_tokens`（默认 40M） | 每轮 reminder 注入 + status 告警；继续跑 |
+| 套餐-硬限 | `hard_limit_tokens`（默认 60M） | checkpoint 暂停（`paused-budget`） |
+| 配额错误 | HTTP 402（余额不足）/ 429（限流耗尽） | **立即停止一切重试**（重试只烧钱或无效）→ checkpoint 暂停（`paused-quota`） |
+| 任务级 | `api_calls` / `wall_clock_min` / `token_budget` | 同熔断④，保存断点 |
+
+### 7.2 本地记账（不依赖服务商账单）
+
+`harness/models.py` 每次调用后把 `{ts, role, model, prompt_tokens, completion_tokens, cumulative}` 追加到任务 `run/usage.jsonl`；soft/hard 判定读累计值。GLM 返回的 `usage` 字段实测可用（2026-09-25 验证）。
+
+### 7.3 Checkpoint（断点保存）内容与恢复
+
+- 写入：state.json 完整快照（当前 round、最佳候选 id+speedup、方向历史含否决记录、暂停原因 `paused-quota|paused-budget`、usage 累计）+ `git commit` 全部已 keep 候选（信息 `keep(c<id>): <speedup>x <direction>`）+ audit.log 一条 `action=checkpoint`；
+- 退出：**码 0**（非崩溃）；`kda status` 显示 paused 状态与已耗 token；
+- 恢复：配额恢复后重启 runner → 读 state.json → 以 git log 定位 last committed round → 从下一 round 续跑（上下文由 ctx 组装器按 compact 产物重建，不依赖内存）。
+
+### 7.4 上下文窗超参
+
+`context_window: 250000`（defaults 级，roles 可覆盖）；compact.py 触发线 = 0.8 × context_window（20% 余量防单轮爆窗）；压缩产物落 run/compact-N.md（可审计，不静默丢上下文）。
+
+### 7.5 迭代版本控制（既有设计明文化）
+
+每候选一目录 `solution/<candidate_id>/`；gate 判 keep 即 git commit；`solutions.jsonl` 父链 DAG；断点续跑以 git log 为准绳——**任何时刻中断，已完成的优化与证据链都不丢**。
+
+## 8. 远程执行层（infra/remote，独立组件）引用
+
+NPU 侧命令（verify/bench/diagnose 的跑数部分）可配置为远程执行：本地大脑 + 远程执行器（两跳 SSH：jump → yq-e15，实测 2026-09-25）。**解耦规则见 ADR-007**：通道实现在 `infra/remote/executor.py`（RemoteExecutor/LocalExecutor）；harness/core 经 Executor 协议（run/push/pull/probe）依赖注入，core 不感知 SSH。密钥经 `infra/secrets/provider.py` 唯一入口读取。配置：任务 config.yaml `execution.remote` 段（Phase 1 随 push/pull 落地）。
