@@ -1,0 +1,5 @@
+# 冒烟 workload：三档 shape，fp16
+workloads:
+  - {id: w01, axes: {batch: 1,  seq: 128,  hidden: 4096}, dtype: fp16, repr: true}
+  - {id: w02, axes: {batch: 1,  seq: 1024, hidden: 4096}, dtype: fp16, repr: true}
+  - {id: w03, axes: {batch: 4,  seq: 512,  hidden: 8192}, dtype: fp16, repr: true}

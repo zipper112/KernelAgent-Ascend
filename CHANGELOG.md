@@ -2,7 +2,36 @@
 
 本项目的显著变更记录。格式参考 Keep a Changelog，版本 tag 打在 git 上。
 
+## [unreleased] - 2026-09-25（Phase 0 NPU 侧验收通过：docker 执行模式 + 端到端出数）
+
+### Changed
+- **native → docker 执行模式转向（ADR-011 §3a 实测结论）**：e15 自装 CANN 8.5.alpha002 树 AICORE 算子全量注册失败（ParseDynamicKernels），死路关闭；机器已验证组合 = `xllm:glm-clone` 容器（CANN 8.2.RC1 + torch 2.1.0 + torch_npu 2.1.0）+ 设备直通 + 宿主驱动只读挂载。`RemoteTarget` 增 exec_mode/docker_image/cann_env。
+- **runner v0.1**：payload 根 = job.json 所在目录（修相对定位）；候选两级回退定位；oracle 优先任务自带 reference.py；torch_npu 2.1 兼容（.npu() 设备、torch.npu.Event 计时——CPU-only 枝干无 torch.Event，getattr 默认值会先求值崩溃，须 hasattr 三元）。
+- **sync 修复**：pull_files 改 tar 字节走 ssh stdout 直传（旧版写 jump /tmp 再读本机路径，必然失败）+ 成员名按父目录打平；`_q()` 远端路径引用（~ 前缀转 $HOME/，防 shlex.quote 单引号冻结展开）；run_job 改 staging 两源合流（runner 相对仓根 + 任务文件相对任务根）+ 预建 results（防 docker root 建目录）。
+
+### Added
+- `infra/remote/container_entry.sh`（容器执行入口）；`tools/smoke_remote_job.py`（Phase 0 验收驱动）；tasks/rmsnorm-smoke 补 reference.py 与 config.yaml；tests +4（docker/native 命令构造 dry、容器入口契约、缺镜像断言）共 44 项。
+
+### 验收记录（Phase 0 NPU 侧）
+- verify 三档全部 `passed=True err_ratio=0.0`；bench p50 = 302.5 / 284.7 / 472.5 μs（含 baseline/speedup 字段）；结果自动 pull 回本地；44 tests 全绿。
+
+## [unreleased] - 2026-09-25（远程执行架构 + e15 供给批次，ADR-011）
+
+### Added
+- **远程执行架构定版（ADR-011 + 协议 §8b）**：本地为家（证据链/git/lock/DAG 唯一事实源）、远端为可再生镜像（payload/results）；知识库与密钥永不离开本地；Job 生命周期协议（JobSpec schema → tar-over-ssh 两跳 push → 远端 runner → pull result）。
+- **实现件**：`infra/remote/sync.py`（JobSpec + push_files/pull_files/run_job）、`infra/remote/runner.py`（远端自包含执行器 v0：verify 容差四步协议 / bench warmup+L2 清除+交错采样）、executor push/pull 实装、`tools/provision_npu.py`（无网 NPU 机供给：PyPI JSON API 闭包解析 + jump 中转下载 + pip --user 离线装）。
+- **e15 供给实战记录（版本配套实测锁定）**：torch 2.13.0+cpu（pytorch.org/whl/cpu aarch64——PyPI 默认 torch 是 CUDA 构建会找 libcublasLt，必须用 CPU 版）+ torch_npu 2.13.0rc1 + CANN 9.1.1（oepkgs.net 免登录直链 RPM，jump 解包传输）；pip --user（e15 无 python3.10-venv、共用机不 sudo）；TORCH_DEVICE_BACKEND_AUTOLOAD=0（torch 2.13 autoload 与 torch_npu 冲突）。
+- 冒烟任务 tasks/rmsnorm-smoke（契约 + 朴素 RMSNorm kernel + 三档 workload）；tests 40 项（+JobSpec 往返/push 容错/runner 自包含断言）。
+
+## [unreleased] - 2026-09-25（自审修补批次）
+
+（自审批次与审计修复合并段见 git 历史 4e5fc48f；后续版本化时整理）
+
 ## [unreleased] - 2026-09-25（审计修复 + 全资产 vendored 批次）
+
+（见 git 历史 6d8575b/1d8b1c01；后续版本化时整理）
+
+## [v0.0-scaffold] - 2026-09-25
 
 ### Added
 - **全资产 vendored 进仓（ADR-008）**：knowledge/skills/ 六组 77 个 skill 目录（core 13 / triton-ascend 6 / ascendc 24 / pypto 17 / tilelang 6 / akg 89 个 SKILL.md 的 11 族整树，~50M）+ third_party/akg KernelVerifier 代码子树（钉版 5aa15f3，4.4M）——git clone 即完整可用，零外部路径依赖（迁移安全）；deps/vendor-manifest.yaml 78 条 hash 钉版 + tools/sync_assets.py 可选更新 + THIRD_PARTY_NOTICES.md。

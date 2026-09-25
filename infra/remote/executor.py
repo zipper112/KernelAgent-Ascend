@@ -27,6 +27,12 @@ class RemoteTarget:
     jump: str = "jump"      # ~/.ssh/config 跳板条目名
     host: str = "yq-e15"    # 跳板上可达的目标机
     workdir: str = ""       # 可选：命令执行前 cd 的工作区（config.execution.remote.workdir）
+    # 执行模式（ADR-011 §8b；2026-09-25 实测后 e15 唯一可用路径是 docker）：
+    #   native —— source cann_env 后直接 python3（要求目标机自装 CANN 可用）
+    #   docker —— sudo docker run 设备直通容器（镜像内自带可用 CANN 栈）
+    exec_mode: str = "native"
+    docker_image: str = ""          # docker 模式必填；e15 实测 = xllm:glm-clone（CANN 8.2.RC1+torch_npu 2.1.0）
+    cann_env: str = ""              # native 模式：CANN set_env.sh 路径
 
 
 class RemoteExecutor:
@@ -56,11 +62,16 @@ class RemoteExecutor:
                 "stdout": self._clean(proc.stdout), "stderr": self._clean(proc.stderr),
                 "error": None if proc.returncode == 0 else f"rc={proc.returncode}"}
 
-    def push(self, local_paths: list[str]) -> dict:   # Phase 1: rsync/scp 两跳
-        raise NotImplementedError("Phase 1: rsync via jump")
+    def push(self, local_paths: list[str], local_root=None, remote_dir="~/kda-ascend/payload") -> dict:
+        from .sync import push_files          # tar-over-ssh 两跳（ADR-011 §8b）
+        from pathlib import Path as _P
+        root = _P(local_root) if local_root else _P.cwd()
+        return push_files(self.target, root, local_paths, remote_dir)
 
-    def pull(self, remote_paths: list[str]) -> dict:  # Phase 1: 只拉摘要
-        raise NotImplementedError("Phase 1: rsync via jump")
+    def pull(self, remote_paths: list[str], local_dir=None) -> dict:
+        from .sync import pull_files
+        from pathlib import Path as _P
+        return pull_files(self.target, remote_paths, local_dir or _P.cwd() / "remote_out")
 
     def probe(self) -> dict:
         script = (

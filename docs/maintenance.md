@@ -13,12 +13,18 @@ python tools/check_env.py   # 预期：NPU 项全为 pending，其余 ok
 pytest tests/               # 全部单测无卡可跑
 ```
 
-### 上板机（Atlas A2 / 910B 或 950）
+### 上板机（yq-e15：两跳 ssh jump → yq-e15，无外网）
 ```bash
-python tools/check_env.py --full
-# 必须全绿的项目：CANN 环境变量、npu-smi、torch_npu、triton-ascend、msprof、
-# akg_agents 可 import（third_party/akg/akg_agents 布局，ADR-008/自审批次 B3）
+# 一键供给（本地执行；详见 ADR-011 实战记录）：
+python tools/provision_npu.py --plan        # 查看 wheel 清单
+python tools/provision_npu.py --provision   # jump 中转下载 + e15 pip --user 离线装
+# CANN toolkit（oepkgs 免登录直链，免 root 解包）：
+#   jump: curl -O https://repo.oepkgs.net/ascend/cann/aarch64/Packages/Ascend-cann-toolkit-9.1.1-linux.aarch64.rpm
+#   两跳传输后 e15: cd ~/kda-ascend && rpm2cpio cann-toolkit.rpm | cpio -idmv
+#   env: source ~/kda-ascend/usr/local/Ascend/ascend-toolkit/set_env.sh（具体层级以解包结果为准）
+# smoke: TORCH_DEVICE_BACKEND_AUTOLOAD=0 python3 -c "import torch,torch_npu;print(torch_npu.npu.is_available())"
 ```
+版本配套（实测锁定）：torch 2.13.0+cpu（pytorch.org/whl/cpu aarch64）+ torch_npu 2.13.0rc1 + CANN 9.1.1；驱动 25.5.2 兼容。
 
 NPU 架构检测注意：以 `ascendc-env-check` skill 的 `get_npu_arch.py`（asys/DSMI 链）为准，**npu-smi 的 Chip Name 不可信**。代际映射：DAV_2201（A2/A3/910B 系，UB 192KB）/ DAV_3510（950 系，UB 248KB）——config.yaml 的 `arch` 字段决定阈值表与知识路由分支。
 

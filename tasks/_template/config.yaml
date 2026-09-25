@@ -24,7 +24,11 @@ execution:
     enabled: false                      # true 时 verify/bench/diagnose 经 RemoteExecutor 跑
     jump: jump                          # ~/.ssh/config 跳板条目
     host: yq-e15                        # 目标机（8×910B4）
-    workdir: "~/kda-ascend"             # 远程工作区根（push 代码/任务定义，pull 证据摘要）
+    mirror_root: "~/kda-ascend"         # 远端镜像根（payload/results；可再生，事实源在本地）
+    device_id: 0                        # 8 卡择一（npu-smi 查空闲后填）
+    exec_mode: docker                   # native|docker（2026-09-25 实测：e15 自装 CANN 不可用，容器是已验证路径）
+    docker_image: "xllm:glm-clone"      # CANN 8.2.RC1 + torch 2.1.0 + torch_npu 2.1.0（镜像随目标机 inventory 变）
+    cann_env: ""                        # native 模式的 CANN set_env.sh（要求目标机自装 CANN 可用）
 
 measurement:
   warmup: 3

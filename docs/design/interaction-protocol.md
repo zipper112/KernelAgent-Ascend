@@ -214,3 +214,19 @@ NPU 侧命令（verify/bench/diagnose 的跑数部分）可配置为远程执行
 | `probe()` | — | `{reachable, checks{...}, raw}` | 只读；checks 含 npu/cann_toolkit/torch_npu/triton |
 
 workdir 语义：RemoteTarget.workdir 非空时 run() 自动 `cd <workdir> &&`（config.execution.remote.workdir 注入）。
+
+### 8b. Job 生命周期协议（本地为家、远端为镜，ADR-011）
+
+```
+本地 kda verify/bench → 组装 JobSpec{job_id,kind,candidate_id,files[],workloads,timeout_s,device_id}
+  → push（tar-over-ssh 两跳：runner+候选代码+workload+job.json → ~/kda-ascend/<task>/payload/）
+  → 远端 runner.py 执行（读 job.json，确定性计算）
+  → pull（results/<job_id>.json → 本地）→ 本地 evidence.py 写证据链 → 本地 git commit
+```
+
+- **单一事实源在本地**：证据链/git/lock/DAG 只在 tasks/<task>/；远端 payload+results 是可再生镜像，可随时清理重建；
+- **知识库与密钥永不离开本地**：远端只做确定性计算（verify/bench/profile）；
+- JobSpec schema 与 push/pull 实现见 `infra/remote/sync.py`；远端执行器 `infra/remote/runner.py`（自包含，无本地依赖）；
+- **执行模式（RemoteTarget.exec_mode，config.execution.remote）**：`docker`（e15 已验证路径：镜像自带可用 CANN 栈，设备直通 + payload/results/宿主驱动三挂载，入口 `infra/remote/container_entry.sh`；native 自装 CANN 8.5.alpha002 AICORE 全灭，见 ADR-011 §3a）/ `native`（source cann_env 后直跑，备用）；
+- **候选与 oracle 定位（runner v0.1）**：候选两级回退 `candidate.py`（扁平）→ `solution/<candidate_id>/candidate.py`（仓内布局）；oracle 优先任务自带 `reference.py`（暴露 reference(inputs)），缺省回退内置 RMSNorm（正式任务必须自带）；
+- 同步大超时执行；Phase 1 长任务换 nohup + status 文件轮询（防两跳断连丢作业）。

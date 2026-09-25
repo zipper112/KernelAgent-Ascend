@@ -1,0 +1,36 @@
+# 任务运行配置（Phase 0 冒烟）
+version: 0
+
+arch: dav_3510                          # 910B4（待 get_npu_arch.py 正式确认代际映射）
+dsl: triton-ascend                      # 冒烟用纯 torch 朴素实现（链路验证优先于 DSL）
+device_id: 0
+
+workload:
+  full_set: bench/workloads.yaml
+  repr_tag: repr
+  l0_smoke: 1
+
+budget:
+  max_rounds: 42
+  max_direction_fails: 3
+  stall_replan: 2
+  api_calls: 2000
+  wall_clock_min: 720
+  token_budget: 20000000
+
+# 远程执行（ADR-011 §8b；2026-09-25 实测：e15 唯一可用路径 = docker 容器）
+execution:
+  remote:
+    enabled: true
+    jump: jump
+    host: yq-e15
+    mirror_root: "~/kda-ascend"
+    device_id: 0
+    exec_mode: docker                   # native 自装 CANN 8.5.alpha002 AICORE 注册全败（ParseDynamicKernels）
+    docker_image: "xllm:glm-clone"      # 机器已验证组合：CANN 8.2.RC1 + torch 2.1.0 + torch_npu 2.1.0
+    cann_env: ""                        # native 模式备用（当前无效）
+
+measurement:
+  warmup: 3
+  samples: 5
+  l2_cache_clear: true

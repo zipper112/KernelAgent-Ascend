@@ -1,0 +1,31 @@
+{
+ "job_id": "rmsnorm-smoke-verify-001",
+ "kind": "verify",
+ "candidate_id": "c001",
+ "device_id": 0,
+ "passed": true,
+ "workloads": [
+  {
+   "id": "w01",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.004,
+   "mismatch_top": []
+  },
+  {
+   "id": "w02",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.004,
+   "mismatch_top": []
+  },
+  {
+   "id": "w03",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.004,
+   "mismatch_top": []
+  }
+ ],
+ "elapsed_s": 12.46
+}

@@ -1,0 +1,21 @@
+# Phase 0 冒烟任务：RMSNorm 朴素 kernel（验收用，非正式 Phase 1 任务）
+# 契约按 contract-template 8 槽最小填充；正式任务在 Phase 1 由 new-task 生成
+contract:
+  task_name: rmsnorm-smoke
+  op_family: norm
+  branch: task/rmsnorm-smoke
+  objective: "Phase 0 NPU 侧验收：远端 runner 链路端到端出数（正确性 + 微秒延迟）"
+  correctness:
+    verifier: remote-runner-v0        # ADR-011 §8b；Phase 1 换 KernelVerifier
+    tolerance_ref: "fp16 0.004（dtype 分级表）"
+    special_behaviors: ["输入全 0 时输出必须为 0"]
+  performance:
+    baseline: "torch eager 参考实现（runner 内 fp32 oracle）"
+    target: "exploratory（冒烟只求出数）"
+    noise_floor: 0.05
+  allowed:
+    dsl: [triton-ascend]              # 冒烟用纯 torch 朴素实现（链路验证优先于 DSL）
+    forbidden: ["不改 bench/ 与 workload 定义"]
+  validation_cmd: "sync.run_job(kind=verify)"
+  evaluation_cmd: "sync.run_job(kind=bench)"
+  promotion: "smoke-only（不进 promote 门）"
