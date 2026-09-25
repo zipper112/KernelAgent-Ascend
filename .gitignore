@@ -11,6 +11,17 @@ tasks/*/profile/
 profile/
 runs/
 outputs/
+
+# 断点与审计承诺的例外（interaction-protocol §2/§7：state.json 续跑、compact 可审计、profile 摘要入仓）
+!tasks/*/run/state.json
+!tasks/*/run/compact-*.md
+!tasks/*/profile/**/summary.json
+
+# 全局预算账本（套餐级，跨任务；ADR-006）
+run-global/
+
+# 模板目录占位（run/ 被忽略但模板需要目录存在）
+!tasks/_template/run/.gitkeep
 *.ncu-rep
 *.npz
 *.npy

@@ -9,6 +9,7 @@ import re
 
 VERDICT_RE = re.compile(r"^MAINLINE_VERDICT:\s*(ADVANCED|STALLED|REGRESSED)\s*$", re.M)
 ACS_RE = re.compile(r"^ACS:\s*\d+/\d+\s*\|\s*FORGOTTEN:\s*\d+\s*\|\s*UNJUSTIFIED_DEFERRALS:\s*\d+\s*$", re.M)
+TERMINALS = ("COMPLETE", "REVISE", "REJECT", "STOP")   # STOP = 全量审计停滞熔断（协议 §4.3）
 
 
 def parse_review(text: str) -> dict:
@@ -20,10 +21,14 @@ def parse_review(text: str) -> dict:
         raise ValueError("ACS 统计行缺失或格式错")
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     body, last = lines[:-1], lines[-1]
-    if last not in ("COMPLETE", "REVISE", "REJECT"):
-        raise ValueError("末行必须是 COMPLETE/REVISE/REJECT")
-    if any(l == "COMPLETE" for l in body):
-        raise ValueError("COMPLETE 只允许出现在最后一行")
+    if last not in TERMINALS:
+        raise ValueError(f"末行必须是 {'/'.join(TERMINALS)}")
+    if any(l in TERMINALS for l in body):
+        raise ValueError(f"末行标记（{'/'.join(TERMINALS)}）只允许出现在最后一行")
+    if last == "COMPLETE":
+        m = re.search(r"ACS:\s*(\d+)/(\d+)", text)
+        if m and m.group(1) != m.group(2):
+            raise ValueError("COMPLETE 与 ACS 统计矛盾（存在未 MET 的 AC）")
     return {"verdict": verdict[0], "terminal": last}
 
 
@@ -65,6 +70,29 @@ def test_two_verdict_lines_fail():
     with pytest.raises(ValueError):
         parse_review("MAINLINE_VERDICT: ADVANCED\nMAINLINE_VERDICT: STALLED\n"
                      "ACS: 1/1 | FORGOTTEN: 0 | UNJUSTIFIED_DEFERRALS: 0\nREVISE")
+
+
+def test_stop_is_valid_terminal():
+    """全量审计停滞熔断：STOP 是合法末行（协议 §4.3 审计修复）。"""
+    r = parse_review(
+        "AC-1: PARTIAL\nMAINLINE_VERDICT: STALLED\n"
+        "ACS: 0/1 | FORGOTTEN: 2 | UNJUSTIFIED_DEFERRALS: 0\nSTOP")
+    assert r["terminal"] == "STOP" and r["verdict"] == "STALLED"
+
+
+def test_stop_in_body_fails():
+    import pytest
+    with pytest.raises(ValueError):
+        parse_review("STOP\nMAINLINE_VERDICT: ADVANCED\n"
+                     "ACS: 1/1 | FORGOTTEN: 0 | UNJUSTIFIED_DEFERRALS: 0\nREVISE")
+
+
+def test_complete_contradicts_acs_fails():
+    """COMPLETE 但 ACS 未满分 → 解析失败（ADR-004 要求的确定性交叉校验）。"""
+    import pytest
+    with pytest.raises(ValueError):
+        parse_review("AC-1: MET\nAC-2: PARTIAL\nMAINLINE_VERDICT: ADVANCED\n"
+                     "ACS: 1/2 | FORGOTTEN: 0 | UNJUSTIFIED_DEFERRALS: 0\nCOMPLETE")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
-# 路由决策表 v0（routing-table.yaml）
+# 路由决策表 v1（routing-table.yaml）
 # 任务的显式 skill 串联（Phase 1 陪伴模式用）；比检索更"硬"——按任务类型直接给出调用链。
-# 检索（query.py）负责探索期发散；决策表负责已知路径收敛。
+# v1：entry 的 path 全部仓内化（与 index.yaml v2 一致）；检索负责探索期发散，决策表负责已知路径收敛。
 
-version: 0
+version: 1
 updated: 2026-09-25
 
 routes:
@@ -12,11 +12,14 @@ routes:
     chain:
       - {entry: triton-ascend-api-rules,        layer: L0, why: "DSL 硬约束常驻"}
       - {entry: triton-ascend-hw-constraints,   layer: L0, why: "CUBE/VEC 存储层级约束"}
-      - {entry: norm-family-opt,                layer: L1, why: "Norm 族优化知识 + 可拷贝模板代码（AscendC 深度路线用）"}
+      - {entry: triton-ascend-coding-standards, layer: L0, why: "triton_ascend 编码规范（本机 skill 补强）"}
+      - {entry: norm-family-opt,                layer: L1, why: "Norm 族优化知识 + 可拷贝模板代码"}
+      - {entry: akg-example-layernorm,          layer: L1, why: "LayerNorm 完整可拷贝样例（试点直接参考）"}
       - {entry: triton-ascend-reduce-guide,     layer: L1, why: "Triton-Ascend reduction 指南"}
-      - {entry: triton-ascend-reduction-case,   layer: L1, why: "同类案例（BLOCK_SIZE 策略等）"}
+      - {entry: triton-ascend-reduction-case,   layer: L1, why: "同类案例（22 个中的 reduction 类）"}
       - {entry: msprof-collect-7groups,         layer: L1, why: "Phase 2 诊断采集入口"}
       - {entry: bound-quickref,                 layer: L1, why: "Bound→修复映射与收益先验"}
+      - {entry: precision-standard,             layer: L1, why: "契约③容差权威来源"}
       - {entry: perf-optimize-flow,             layer: L2, why: "调优全流程索引（按需自查）"}
     fallback_on_miss: [blindspot-declaration 条款]
 
@@ -26,6 +29,7 @@ routes:
     chain:
       - {entry: triton-ascend-api-rules,        layer: L0}
       - {entry: triton-ascend-hw-constraints,   layer: L0}
+      - {entry: triton-ascend-design-cases,     layer: L1, why: "elemwise-broadcast 案例"}
       - {entry: bound-quickref,                 layer: L1}
     fallback_on_miss: [blindspot-declaration 条款]
 
@@ -35,12 +39,22 @@ routes:
     chain:
       - {entry: triton-ascend-api-rules,        layer: L0}
       - {entry: triton-ascend-hw-constraints,   layer: L0}
-      # TODO(Phase 3): 补 akg triton-ascend guides/matmul、ascendc-performance-best-practices matmul 族
+      - {entry: triton-ascend-design-cases,     layer: L1, why: "matmul-swizzle2d 案例"}
+      # TODO(Phase 3): akg guides/triton-ascend-matmul + ascendc-performance-best-practices matmul 族编目
     fallback_on_miss: [blindspot-declaration 条款]
 
   matmul-3510-blaze:
     arch: [dav_3510]
     dsl: [ascendc]
     chain:
-      # TODO(Phase 3): ascendc-blaze-best-practice 四步流程 + GMM/GLU delta 文档
+      # TODO(Phase 3): ascendc-blaze-best-practice 四步流程编目（已 vendored 在 knowledge/skills/ascendc/）
+    fallback_on_miss: [blindspot-declaration 条款]
+
+  precision-triage:                            # 症状驱动的诊断路由（Phase 2 诊断闭环用）
+    arch: [dav_2201, dav_3510]
+    dsl: ["*"]
+    chain:
+      - {entry: precision-quickref,             layer: L1, why: "症状决策树"}
+      - {entry: triton-ascend-precision-debug,  layer: L1, why: "Triton 路线对口件"}
+      - {entry: precision-standard,             layer: L1, why: "容差标准"}
     fallback_on_miss: [blindspot-declaration 条款]

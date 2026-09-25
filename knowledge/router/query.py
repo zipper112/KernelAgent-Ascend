@@ -40,20 +40,17 @@ FUNDAMENTAL_KIND = "fundamental"
 
 
 def load_index() -> list[dict]:
-    """极简 YAML 读取（免依赖）：解析本仓库 index.yaml 的 entries 列表。
-
-    只支持本文件约定的扁平结构；复杂化时再换 PyYAML（tools/check_env.py 会提示）。
-    """
+    """读 index.yaml 的 entries 列表（PyYAML 优先；无依赖时行级回退）。"""
     try:
         import yaml  # type: ignore
         data = yaml.safe_load(INDEX_PATH.read_text(encoding="utf-8"))
-        return list(data.get("entries", []))
+        return [dict(e, ref=e.get("path", e.get("ref", ""))) for e in data.get("entries", [])]
     except ImportError:
         pass
     # 无 PyYAML 时的行级回退解析
     entries: list[dict] = []
     cur: dict | None = None
-    kv = re.compile(r"^\s*-?\s*(\w[\w-]*):\s*(.+?)\s*$")
+    kv = re.compile(r"^\s*-?\s*([\w][\w-]*):\s*(.+?)\s*$")
     for line in INDEX_PATH.read_text(encoding="utf-8").splitlines():
         if re.match(r"^\s*-\s+id:", line):
             if cur:
@@ -69,9 +66,9 @@ def load_index() -> list[dict]:
             val = [v.strip().strip('"').strip("'") for v in raw[1:-1].split(",") if v.strip()]
         else:
             val = raw.strip('"').strip("'")
-        if key in ("entry",):  # routing-table 用词兼容
-            key = "id"
         cur[key] = val
+        if key == "path":                 # v2 字段：path 即检索输出的 ref
+            cur["ref"] = val
     if cur:
         entries.append(cur)
     return entries

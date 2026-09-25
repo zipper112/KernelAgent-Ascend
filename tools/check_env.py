@@ -47,9 +47,36 @@ def check_yaml() -> None:
 def check_repo_layout() -> None:
     missing = [p for p in ("harness/core/README.md", "knowledge/router/index.yaml",
                            "knowledge/prompts/contract-template.md", "agent-config/models.yaml",
-                           "docs/design/interaction-protocol.md", "deps/skills.yaml")
+                           "docs/design/interaction-protocol.md", "deps/skills.yaml",
+                           "deps/vendor-manifest.yaml", "THIRD_PARTY_NOTICES.md")
                if not (ROOT / p).exists()]
     record("仓库骨架完整性", "ok" if not missing else "fail", "缺: " + ",".join(missing) if missing else "")
+
+
+def check_vendored_assets() -> None:
+    """ADR-008 自包含校验：manifest 资产存在 + index ref 仓内可解析 + akg 钉版标记。"""
+    import yaml
+    try:
+        data = yaml.safe_load((ROOT / "deps" / "vendor-manifest.yaml").read_text(encoding="utf-8"))
+        assets = data.get("assets", [])
+        missing = [a["name"] for a in assets if not (ROOT / a["path"]).exists()]
+        record("vendored 资产（manifest）", "ok" if not missing else "fail",
+               f"{len(assets)} 条资产" + (f"，断链: {missing[:3]}" if missing else ""))
+    except Exception as e:  # noqa: BLE001
+        record("vendored 资产（manifest）", "fail", str(e)[:100])
+        return
+    # index ref 解析（复用 query.py 的 loader）
+    sys.path.insert(0, str(ROOT / "knowledge" / "router"))
+    try:
+        from query import load_index
+        entries = load_index()
+        broken = [e.get("id") for e in entries if not (ROOT / e.get("ref", "??")).exists()]
+        record("知识索引 ref 仓内可解析", "ok" if not broken else "fail",
+               f"{len(entries)} 条" + (f"，断链: {broken[:3]}" if broken else ""))
+    except Exception as e:  # noqa: BLE001
+        record("知识索引 ref 仓内可解析", "fail", str(e)[:100])
+    pin = ROOT / "third_party" / "akg" / "PINNED_COMMIT"
+    record("akg 钉版标记", "ok" if pin.exists() else "fail", pin.read_text().strip() if pin.exists() else "缺失")
 
 
 def check_router() -> None:
@@ -68,23 +95,22 @@ def check_router() -> None:
 
 
 def check_skills() -> None:
-    skill_root = Path(os.environ.get("SKILL_ROOT", Path.home() / ".agents" / "skills"))
-    names = ["ops-profiling", "ascendc-performance-best-practices", "ascendc-perf-optimize",
-             "ascendc-crash-debug", "ascendc-precision-debug", "ascendc-runtime-debug",
-             "ascendc-env-check", "triton-op-coding", "triton-op-designer", "pypto-golden-generate"]
-    missing = [n for n in names if not (skill_root / n / "SKILL.md").exists()]
-    if not missing:
-        record("核心 skill 依赖（10 项）", "ok", f"@ {skill_root}")
-    else:
-        record("核心 skill 依赖（10 项）", "warn", "缺: " + ",".join(missing) + f"（skill_root={skill_root}）")
+    """v2：vendored 自包含校验（替代旧的外部 SKILL_ROOT 检查，ADR-008）。"""
+    base = ROOT / "knowledge" / "skills"
+    groups = {g.name: sum(1 for d in g.iterdir() if d.is_dir()) for g in base.iterdir() if g.is_dir()}
+    total = sum(groups.values())
+    expect_min = {"core": 13, "triton-ascend": 6, "ascendc": 24, "pypto": 17, "tilelang": 6}
+    short = {k: v for k, v in expect_min.items() if groups.get(k, 0) < v}
+    detail = " ".join(f"{k}={v}" for k, v in sorted(groups.items()))
+    record(f"vendored skill 资产（{total} 目录）", "ok" if not short else "fail",
+           detail + (f"；缺: {short}" if short else ""))
 
 
 def check_upstreams() -> None:
-    for name, sub in (("akg", "akg_agents"), ("humanize", None),
-                      ("kda", None), ("mlsys2026-flashinfer-contest", None)):
-        p = ROOT.parent / ".repo-research" / name
-        ok = p.exists() and ((p / sub).exists() if sub else True)
-        record(f"上游 checkout: {name}", "ok" if ok else "warn", str(p))
+    """v2：上游 checkout 检查改为可选（仅 sync_assets 用；运行链不依赖）。"""
+    sync = ROOT / "tools" / "sync_assets.py"
+    record("资产同步工具（可选）", "ok" if sync.exists() else "warn",
+           "上游 checkout 缺失不影响运行（ADR-008 自包含）" if sync.exists() else "缺 tools/sync_assets.py")
 
 
 def check_npu(full: bool) -> None:
@@ -160,9 +186,9 @@ def main() -> int:
     print(f"KDA-Ascend check_env  platform={platform.system()}  full={args.full}  remote={args.remote}")
     print("[1/7] 基础");      check_python(); check_yaml()
     print("[2/7] 仓库");      check_repo_layout()
-    print("[3/7] 知识路由");  check_router()
-    print("[4/7] skill 依赖"); check_skills()
-    print("[5/7] 上游");      check_upstreams()
+    print("[3/7] 知识路由");  check_router(); check_vendored_assets()
+    print("[4/7] skill 资产"); check_skills()
+    print("[5/7] 资产同步");  check_upstreams()
     print("[6/7] NPU/模型");  check_npu(args.full); check_model_endpoint()
     print("[7/7] 远程");      check_remote(args.remote)
 

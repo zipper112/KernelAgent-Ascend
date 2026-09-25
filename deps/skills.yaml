@@ -1,102 +1,46 @@
-# deps/skills.yaml —— 本机 skill 依赖清单
-# 规则（docs/maintenance.md §3）：增删改走 deps: 前缀 commit；被 index.yaml 引用的条目必须同步路由验证。
-# 来源根：C:\Users\11565\.agents\skills\（换机器时按 source 路径重建并跑 setup.sh 校验）
+# deps/skills.yaml —— vendored skill 资产索引（v2，自包含）
+# v2 变更：资产实体已 vendor 进 knowledge/skills/<group>/<name>/（迁移安全）；
+#          本文件只保留"分组-用途-路由引用"映射；完整清单与 hash 见 deps/vendor-manifest.yaml。
+# 增删改流程（maintenance.md §3）：改本文件 + vendor-manifest + 路由验证，commit 前缀 deps:。
 
-version: 0
+version: 2
 updated: 2026-09-25
 
-skills:
-  # ---- 核心五件（试点 RMSNorm 必需）----
-  - name: ops-profiling
-    source: "{SKILL_ROOT}/ops-profiling"
-    purpose: "msprof 7 组采集 + Bound 判定 + 10 类症状→修复映射（L2 诊断主力）"
-    used_by_router: [msprof-collect-7groups, bound-quickref]
-    version: "本机安装版（无版本号，以 SKILL.md 内容 hash 钉）"
+groups:
+  core:          "跨路线诊断/验证/调优件（13 个，全部已路由或备用）"
+  triton-ascend: "Triton 主路线（6 个）"
+  ascendc:       "AscendC 深度路线（24 个，Phase 4 启用）"
+  pypto:         "PyPTO 路线（17 个，Phase 4 启用）"
+  tilelang:      "TileLang 路线（6 个，Phase 4 启用）"
+  akg:           "akg 内置 skill 整树（89 个 SKILL.md，钉版 5aa15f3；triton-ascend 子树 43 个为主力）"
 
-  - name: ascendc-performance-best-practices
-    source: "{SKILL_ROOT}/ascendc-performance-best-practices"
-    purpose: "算子族优化知识库 + 模板代码（KernelWiki 等价物主力）"
-    used_by_router: [norm-family-opt]
-    version: "本机安装版"
+routed:   # 被 knowledge/router/index.yaml 引用的资产（增删必须同步路由验证）
+  - {asset: core/ops-profiling,                       entries: [msprof-collect-7groups, bound-quickref]}
+  - {asset: core/ops-precision-standard,              entries: [precision-standard]}
+  - {asset: core/npu-arch,                            entries: [npu-arch-table]}
+  - {asset: core/torch-ops-profiler,                  entries: [torch-ops-profiling]}
+  - {asset: core/asys-toolkit,                        entries: [fault-collect-asys]}
+  - {asset: core/ascendc-perf-optimize,               entries: [perf-optimize-flow]}
+  - {asset: core/ascendc-performance-best-practices,  entries: [norm-family-opt]}
+  - {asset: core/ascendc-crash-debug,                 entries: [crash-quickref]}
+  - {asset: core/ascendc-precision-debug,             entries: [precision-quickref]}
+  - {asset: core/ascendc-runtime-debug,               entries: [runtime-errcodes]}
+  - {asset: triton-ascend/triton-op-coding,           entries: [triton-ascend-coding-standards]}
+  - {asset: triton-ascend/triton-op-designer,         entries: [triton-ascend-design-cases]}
+  - {asset: triton-ascend/triton-precision-debug,     entries: [triton-ascend-precision-debug]}
+  - {asset: triton-ascend/triton-latency-optimizer,   entries: [triton-ascend-latency-opt]}
+  - {asset: triton-ascend/triton-simulator-optimizer, entries: [triton-simulator-opt]}
+  - {asset: triton-ascend/triton-op-verifier,         entries: [triton-op-verify-standard]}
+  - {asset: akg/triton-ascend,                        entries: [norm 族全部 akg 条目见 index.yaml]}
 
-  - name: ascendc-perf-optimize
-    source: "{SKILL_ROOT}/ascendc-perf-optimize"
-    purpose: "4 步调优流程（Tiling→卡间→核间→单核）+ MC² 隔离测试"
-    used_by_router: [perf-optimize-flow]
-    version: "本机安装版"
+unrouted:  # 已 vendor、暂无路由条目（启用时补 index 条目）
+  core:    [msaicerr-toolkit, msnpureport-toolkit, ascendc-env-check]
+  triton-ascend: []
+  ascendc: ["整组（Phase 4：tiling/st/whitebox/ut/code-review/sync-audit/docs/四模板/regbase/blaze/mc2/api-bp/catlass 三件/extension/cann-env）"]
+  pypto:   ["整组（Phase 4）"]
+  tilelang: ["整组（Phase 4）"]
+  akg:     ["triton-ascend 子树外的 10 个族（cuda-c/cpp/swft 等，Phase 4 按需）"]
 
-  - name: triton-op-coding
-    source: "{SKILL_ROOT}/triton-op-coding"
-    purpose: "triton_ascend DSL 编码规范（L0 候补，若 akg 内置不可用）"
-    used_by_router: []
-    version: "本机安装版"
-
-  - name: triton-op-designer
-    source: "{SKILL_ROOT}/triton-op-designer"
-    purpose: "算法草图设计 + 20+ 按类优化案例（含 reduction）"
-    used_by_router: []   # Phase 3 编目后接入
-    version: "本机安装版"
-
-  # ---- 故障诊断三件 ----
-  - name: ascendc-crash-debug
-    source: "{SKILL_ROOT}/ascendc-crash-debug"
-    purpose: "卡死/崩溃/aic error 速查 + plog 解析 + mssanitizer"
-    used_by_router: [crash-quickref]
-    version: "本机安装版"
-
-  - name: ascendc-precision-debug
-    source: "{SKILL_ROOT}/ascendc-precision-debug"
-    purpose: "精度症状决策树（全 0/随机值/容差不达）"
-    used_by_router: [precision-quickref]
-    version: "本机安装版"
-
-  - name: ascendc-runtime-debug
-    source: "{SKILL_ROOT}/ascendc-runtime-debug"
-    purpose: "aclnn 错误码表 + Kernel 查找失败排查"
-    used_by_router: [runtime-errcodes]
-    version: "本机安装版"
-
-  # ---- 环境与扩展（按需）----
-  - name: ascendc-env-check
-    source: "{SKILL_ROOT}/ascendc-env-check"
-    purpose: "get_npu_arch.py 架构检测（asys/DSMI 链；npu-smi Chip Name 不可信）"
-    used_by_router: []
-    version: "本机安装版"
-
-  - name: pypto-golden-generate
-    source: "{SKILL_ROOT}/pypto-golden-generate"
-    purpose: "NPU golden 参考生成脚手架（verify.py golden 路线）"
-    used_by_router: []
-    version: "本机安装版"
-
-  # ---- 次级（Phase 3+ 编目）----
-  - name: ascendc-api-best-practices
-    source: "{SKILL_ROOT}/ascendc-api-best-practices"
-    purpose: "18 类 API 知识 + 黑名单 + 对齐约束（AscendC 路线时启用）"
-    used_by_router: []
-    version: "本机安装版"
-    note: "ADR-001 Phase 4"
-
-  - name: ascendc-blaze-best-practice
-    source: "{SKILL_ROOT}/ascendc-blaze-best-practice"
-    purpose: "950/DAV_3510 MatMul 路线"
-    used_by_router: []
-    version: "本机安装版"
-    note: "3510 深度路线，Phase 4"
-
-  - name: msaicerr-toolkit
-    source: "{SKILL_ROOT}/msaicerr-toolkit"
-    purpose: "AI Core Error 解析 + Dump→npy"
-    used_by_router: []
-    version: "本机安装版"
-
-  - name: msnpureport-toolkit
-    source: "{SKILL_ROOT}/msnpureport-toolkit"
-    purpose: "Device 日志/黑匣子导出"
-    used_by_router: []
-    version: "本机安装版"
-
-# akg 内置知识（不占本机 skill 位，随 akg 钉版仓库走）
-akg_builtin:
-  repo_ref: "deps/upstream.md#akg"
-  purpose: "triton-ascend 7 基础 + 5 指南 + 23 案例（index.yaml 中 skill=akg-built-in 条目）"
+verification:
+  - "tools/check_env.py：vendor-manifest 每条 path 存在 + index.yaml 每条 ref 仓内可解析"
+  - "tests/test_assets.py：上述断言的 CI 版（防断链复发）"

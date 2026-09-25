@@ -2,6 +2,7 @@
 contract:
   task_name: TEMPLATE-REPLACE-ME
   op_family: TEMPLATE-REPLACE-ME        # norm|matmul|attention|reduce|elementwise|sort|moe
+  branch: task/TEMPLATE-REPLACE-ME      # 任务专属分支（gate 硬校验②；默认 task/<task_name>）
   objective: TEMPLATE-REPLACE-ME
   correctness:
     verifier: kda-verify
@@ -17,6 +18,7 @@ contract:
       - "不得修改 bench/ 与 baseline/"
       - "不得引入闭源二进制依赖"
       - "不得绕过 kda verify 自建验证"
+      - "不得引用现成优化答案（外部优化版算子源码/CANNBot 知识卡/同类竞赛 solution）——只能参考 vendored 知识库与官方文档"
   validation_cmd: "kda verify --candidate <id> --workload-set full"
   evaluation_cmd: "kda bench --candidate <id> --mode l1"
   promotion:

@@ -1,0 +1,94 @@
+# deps/vendor-manifest.yaml —— vendored 资产清单（来源可溯 + hash 防漂移）
+# 规则：资产实体在 knowledge/skills/<group>/<name>/ 与 third_party/；本文件是唯一登记处。
+# 更新流程：tools/sync_assets.py 从源重拉 → 重算 hash → diff 报告 → 人工确认后更新本文件。
+version: 1
+updated: 2026-09-25
+sources:
+  local-skills: "C:/Users/11565/.agents/skills/<name>（团队内部 skill 快照，license: team-internal）"
+  akg: "https://gitcode.com/mindspore/akg.git br_agents @5aa15f3（Apache-2.0）"
+groups:
+  core: "跨路线诊断/验证/调优件"
+  triton-ascend: "Triton 主路线"
+  ascendc: "AscendC 深度路线（Phase 4）"
+  pypto: "PyPTO 路线（Phase 4）"
+  tilelang: "TileLang 路线（Phase 4）"
+  akg: "akg 内置 skill（钉版 5aa15f3）"
+assets:
+  - {name: ascendc-crash-debug, group: core, path: knowledge/skills/core/ascendc-crash-debug, tree_sha256: 6a547d425e2af7cc}
+  - {name: ascendc-env-check, group: core, path: knowledge/skills/core/ascendc-env-check, tree_sha256: f1ba9b8076bed3c7}
+  - {name: ascendc-perf-optimize, group: core, path: knowledge/skills/core/ascendc-perf-optimize, tree_sha256: e67d52699bc6b7de}
+  - {name: ascendc-performance-best-practices, group: core, path: knowledge/skills/core/ascendc-performance-best-practices, tree_sha256: e70a08e15f014b95}
+  - {name: ascendc-precision-debug, group: core, path: knowledge/skills/core/ascendc-precision-debug, tree_sha256: 70e8673ec81bf6ab}
+  - {name: ascendc-runtime-debug, group: core, path: knowledge/skills/core/ascendc-runtime-debug, tree_sha256: 02df44d0710974b2}
+  - {name: asys-toolkit, group: core, path: knowledge/skills/core/asys-toolkit, tree_sha256: c40d1f66c152a5bf}
+  - {name: msaicerr-toolkit, group: core, path: knowledge/skills/core/msaicerr-toolkit, tree_sha256: cb6caa4b34971118}
+  - {name: msnpureport-toolkit, group: core, path: knowledge/skills/core/msnpureport-toolkit, tree_sha256: af0c1c57b127bfde}
+  - {name: npu-arch, group: core, path: knowledge/skills/core/npu-arch, tree_sha256: fe24b1fc013630aa}
+  - {name: ops-precision-standard, group: core, path: knowledge/skills/core/ops-precision-standard, tree_sha256: 0b8bcee292ab69d0}
+  - {name: ops-profiling, group: core, path: knowledge/skills/core/ops-profiling, tree_sha256: ec5eb70cc9aaf731}
+  - {name: torch-ops-profiler, group: core, path: knowledge/skills/core/torch-ops-profiler, tree_sha256: bc9b3174eaac7650}
+  - {name: triton-latency-optimizer, group: triton-ascend, path: knowledge/skills/triton-ascend/triton-latency-optimizer, tree_sha256: 93cbaf7dac221e43}
+  - {name: triton-op-coding, group: triton-ascend, path: knowledge/skills/triton-ascend/triton-op-coding, tree_sha256: 63c364e9eeb497ca}
+  - {name: triton-op-designer, group: triton-ascend, path: knowledge/skills/triton-ascend/triton-op-designer, tree_sha256: 21811b596d5bfc5b}
+  - {name: triton-op-verifier, group: triton-ascend, path: knowledge/skills/triton-ascend/triton-op-verifier, tree_sha256: ca5106d4b354b608}
+  - {name: triton-precision-debug, group: triton-ascend, path: knowledge/skills/triton-ascend/triton-precision-debug, tree_sha256: 2a6545c3181808ac}
+  - {name: triton-simulator-optimizer, group: triton-ascend, path: knowledge/skills/triton-ascend/triton-simulator-optimizer, tree_sha256: 6abdc7358097f3ff}
+  - {name: aiss-tiling-solver, group: ascendc, path: knowledge/skills/ascendc/aiss-tiling-solver, tree_sha256: 6f8aee67698a24a6}
+  - {name: ascendc-api-best-practices, group: ascendc, path: knowledge/skills/ascendc/ascendc-api-best-practices, tree_sha256: 2995e0e2159e92c6}
+  - {name: ascendc-blaze-best-practice, group: ascendc, path: knowledge/skills/ascendc/ascendc-blaze-best-practice, tree_sha256: 0024029e00dc67b4}
+  - {name: ascendc-blaze-migration, group: ascendc, path: knowledge/skills/ascendc/ascendc-blaze-migration, tree_sha256: 78cbf4e4fa900bc2}
+  - {name: ascendc-code-review, group: ascendc, path: knowledge/skills/ascendc/ascendc-code-review, tree_sha256: ddd79cce6854717e}
+  - {name: ascendc-direct-invoke-template, group: ascendc, path: knowledge/skills/ascendc/ascendc-direct-invoke-template, tree_sha256: 464f3fdf746a28bf}
+  - {name: ascendc-direct-invoke-to-registry-invoke, group: ascendc, path: knowledge/skills/ascendc/ascendc-direct-invoke-to-registry-invoke, tree_sha256: db8b551045900dca}
+  - {name: ascendc-docs-gen, group: ascendc, path: knowledge/skills/ascendc/ascendc-docs-gen, tree_sha256: d0a6d921a82d337b}
+  - {name: ascendc-docs-search, group: ascendc, path: knowledge/skills/ascendc/ascendc-docs-search, tree_sha256: 79de41e5201ccb14}
+  - {name: ascendc-mc2-best-practice, group: ascendc, path: knowledge/skills/ascendc/ascendc-mc2-best-practice, tree_sha256: cb7a63f06837baf6}
+  - {name: ascendc-regbase-best-practice, group: ascendc, path: knowledge/skills/ascendc/ascendc-regbase-best-practice, tree_sha256: e5fb2185514c2087}
+  - {name: ascendc-registry-invoke-template, group: ascendc, path: knowledge/skills/ascendc/ascendc-registry-invoke-template, tree_sha256: 8784ae5d156cee6e}
+  - {name: ascendc-registry-invoke-to-direct-invoke, group: ascendc, path: knowledge/skills/ascendc/ascendc-registry-invoke-to-direct-invoke, tree_sha256: 158017e7cd1253f1}
+  - {name: ascendc-simt-tiling-design, group: ascendc, path: knowledge/skills/ascendc/ascendc-simt-tiling-design, tree_sha256: bf53e183195e20e8}
+  - {name: ascendc-st-design, group: ascendc, path: knowledge/skills/ascendc/ascendc-st-design, tree_sha256: a5f37b064355af21}
+  - {name: ascendc-sync-audit, group: ascendc, path: knowledge/skills/ascendc/ascendc-sync-audit, tree_sha256: e3a9a50fa164315f}
+  - {name: ascendc-tiling-design, group: ascendc, path: knowledge/skills/ascendc/ascendc-tiling-design, tree_sha256: 0f449b033789b455}
+  - {name: ascendc-ut-develop, group: ascendc, path: knowledge/skills/ascendc/ascendc-ut-develop, tree_sha256: 665e2770de9dd4f6}
+  - {name: ascendc-whitebox-design, group: ascendc, path: knowledge/skills/ascendc/ascendc-whitebox-design, tree_sha256: 878ea4cdd6e30490}
+  - {name: cann-env-setup, group: ascendc, path: knowledge/skills/ascendc/cann-env-setup, tree_sha256: 8b545da4c72360ec}
+  - {name: catlass-op-design, group: ascendc, path: knowledge/skills/ascendc/catlass-op-design, tree_sha256: 73024dd541c11b9f}
+  - {name: catlass-op-develop, group: ascendc, path: knowledge/skills/ascendc/catlass-op-develop, tree_sha256: b72ae5a82ffca66e}
+  - {name: catlass-op-perf-tune, group: ascendc, path: knowledge/skills/ascendc/catlass-op-perf-tune, tree_sha256: c55825a7bccd425f}
+  - {name: torch-ascendc-op-extension, group: ascendc, path: knowledge/skills/ascendc/torch-ascendc-op-extension, tree_sha256: 3c1e1689b6992d4f}
+  - {name: pypto-api-explore, group: pypto, path: knowledge/skills/pypto/pypto-api-explore, tree_sha256: 99cd15063fbabcc6}
+  - {name: pypto-docs-search, group: pypto, path: knowledge/skills/pypto/pypto-docs-search, tree_sha256: 88815a31ceb2f77f}
+  - {name: pypto-general-debug, group: pypto, path: knowledge/skills/pypto/pypto-general-debug, tree_sha256: 5fa441eb4ff8a3f0}
+  - {name: pypto-golden-generate, group: pypto, path: knowledge/skills/pypto/pypto-golden-generate, tree_sha256: 1aa503ebc413fd0f}
+  - {name: pypto-intent-understand, group: pypto, path: knowledge/skills/pypto/pypto-intent-understand, tree_sha256: 3d67fc1e28ba78cb}
+  - {name: pypto-memory-template, group: pypto, path: knowledge/skills/pypto/pypto-memory-template, tree_sha256: 5979dcc83e472337}
+  - {name: pypto-op-construct, group: pypto, path: knowledge/skills/pypto/pypto-op-construct, tree_sha256: 3c47d3882ce116cc}
+  - {name: pypto-op-design, group: pypto, path: knowledge/skills/pypto/pypto-op-design, tree_sha256: 847ab2089210392f}
+  - {name: pypto-op-develop, group: pypto, path: knowledge/skills/pypto/pypto-op-develop, tree_sha256: ce324b53d4199ffa}
+  - {name: pypto-op-knowledge, group: pypto, path: knowledge/skills/pypto/pypto-op-knowledge, tree_sha256: 1961e48fe812b249}
+  - {name: pypto-op-perf-tune, group: pypto, path: knowledge/skills/pypto/pypto-op-perf-tune, tree_sha256: 5db4126366193e59}
+  - {name: pypto-op-plan, group: pypto, path: knowledge/skills/pypto/pypto-op-plan, tree_sha256: 0b415c3d5ae08557}
+  - {name: pypto-op-review, group: pypto, path: knowledge/skills/pypto/pypto-op-review, tree_sha256: 1000f238b85cb6ac}
+  - {name: pypto-op-verify, group: pypto, path: knowledge/skills/pypto/pypto-op-verify, tree_sha256: 006b75b09cf97bd3}
+  - {name: pypto-orchestration-manual, group: pypto, path: knowledge/skills/pypto/pypto-orchestration-manual, tree_sha256: 74ff5fd1c5286831}
+  - {name: pypto-precision-compare, group: pypto, path: knowledge/skills/pypto/pypto-precision-compare, tree_sha256: a8072d3cc9419187}
+  - {name: pypto-precision-debug, group: pypto, path: knowledge/skills/pypto/pypto-precision-debug, tree_sha256: dec7a531a72980d4}
+  - {name: tilelang-api-best-practices, group: tilelang, path: knowledge/skills/tilelang/tilelang-api-best-practices, tree_sha256: 11dbb235ceb0e643}
+  - {name: tilelang-op-design, group: tilelang, path: knowledge/skills/tilelang/tilelang-op-design, tree_sha256: a188f02c542fdb5e}
+  - {name: tilelang-op-develop, group: tilelang, path: knowledge/skills/tilelang/tilelang-op-develop, tree_sha256: dec22f34b0d53714}
+  - {name: tilelang-op-test-design, group: tilelang, path: knowledge/skills/tilelang/tilelang-op-test-design, tree_sha256: 7072617b3bf0d042}
+  - {name: tilelang-perf-optimization, group: tilelang, path: knowledge/skills/tilelang/tilelang-perf-optimization, tree_sha256: 82ba066c1497a46c}
+  - {name: tilelang-programming-model-guide, group: tilelang, path: knowledge/skills/tilelang/tilelang-programming-model-guide, tree_sha256: 545440de0128472e}
+  - {name: cpp, group: akg, path: knowledge/skills/akg/cpp, tree_sha256: 49019d986276a622}
+  - {name: cuda-c, group: akg, path: knowledge/skills/akg/cuda-c, tree_sha256: 2875fd04773dcd4f}
+  - {name: designer, group: akg, path: knowledge/skills/akg/designer, tree_sha256: 62341ec25de74530}
+  - {name: kernel-agent, group: akg, path: knowledge/skills/akg/kernel-agent, tree_sha256: 56bbe78d76ff7a4d}
+  - {name: kernel-workflow, group: akg, path: knowledge/skills/akg/kernel-workflow, tree_sha256: 689a28ce1211b11f}
+  - {name: performance-summary, group: akg, path: knowledge/skills/akg/performance-summary, tree_sha256: a3c2ff00c0c73524}
+  - {name: pypto, group: akg, path: knowledge/skills/akg/pypto, tree_sha256: 666ec60c18a8cdbe}
+  - {name: task-constructor, group: akg, path: knowledge/skills/akg/task-constructor, tree_sha256: c2587b8b32cee7fa}
+  - {name: tilelang-cuda, group: akg, path: knowledge/skills/akg/tilelang-cuda, tree_sha256: f78af3cbd64ea744}
+  - {name: triton-ascend, group: akg, path: knowledge/skills/akg/triton-ascend, tree_sha256: 7427342c624cc7f8}
+  - {name: triton-cuda, group: akg, path: knowledge/skills/akg/triton-cuda, tree_sha256: 56744b4d0b52499d}
+  - {name: akg-verifier-code, group: third_party, path: third_party/akg, tree_sha256: 4f6bbd2521620f07, pinned: 5aa15f3}

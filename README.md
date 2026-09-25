@@ -27,19 +27,22 @@ kda-ascend/
 │   ├── core/           #   确定性核心（verify/measure/diagnose/evidence/promote，零 LLM）
 │   ├── control/        #   控制层（runner 状态机 / gate 评审门）
 │   ├── ctx/            #   上下文组装器（round 渲染/防过期/三层注入/承认闸门）
-│   ├── hooks/          #   宿主适配器（ZCode/Claude Code Stop-hook，只是糖）
+│   ├── hooks/          #   宿主适配器（ZCode/Claude Code Stop-hook；Phase 1 交付）
 │   └── cli.py          #   agent 交互入口（kda verify/bench/diagnose/promote/...）
 ├── knowledge/          # 核心二：知识资产（与 harness 同级的一等公民）
 │   ├── prompts/        #   契约模板 + 三阶段模板 + 可组合条款库
 │   ├── router/         #   三轴索引（症状×算子族×硬件代际）+ 路由决策表 + 盲区清单
+│   ├── skills/         #   vendored skill 资产（六组 77 目录 + akg 89 skill；ADR-008 自包含）
 │   └── lessons/        #   BitLesson 经验库（跨任务沉淀回流）
+├── third_party/akg/    # KernelVerifier 代码子树（钉版 5aa15f3，Apache-2.0）
 ├── agent-config/       # 模型配置（GLM 主配，OpenAI 兼容）
 ├── docs/               # ADR 决策记录 / 交互协议规格 / 维护手册
-├── deps/               # 外部依赖：skill 清单 + 上游钉版
+├── deps/               # vendor-manifest（hash 钉版）+ 上游来源记录
+├── infra/              # 非核心基础设施（remote 远程执行 / secrets 密钥；ADR-007 解耦）
 ├── tasks/              # 算子任务工作区（七件套，任务资产永不进通用层）
 │   └── _template/      #   clone 即用的任务骨架
-├── tools/              # check_env.py 环境自检
-└── tests/              # 无卡机可跑的最小单测
+├── tools/              # check_env.py 自检 + sync_assets.py 资产更新（可选）
+└── tests/              # 无卡机可跑的单测（资产断言/路由语义/gate 契约）
 ```
 
 ## 快速开始

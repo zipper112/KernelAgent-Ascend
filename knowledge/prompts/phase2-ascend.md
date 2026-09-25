@@ -29,3 +29,7 @@ exit_criteria: "l1 加速 >=1.1x 且正确性过，或 5 次用尽留证据退�
 - 建议最多 3-5 条；每条必须点名具体 metric 数值（禁"memory-bound"空话）；
 - 实测数字六字段（gpu/代际/dtype/shape/metric/value+出处）才可引用；
 - 预期收益是路由知识给的先验，**实测收益以 kda ab 为准**。
+
+## 周期性全量复验（比赛经验："大改进后跑全量"）
+
+每累计 **3 个 keep**（config.yaml `full_reverify_every_keeps: 3` 可调）触发一次全量集正确性复验（`kda verify --workload-set full`）——防止增量迭代在非代表 workload 上悄悄退化。复验失败 = 该 keep 回滚为 revise。
