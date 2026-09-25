@@ -1,0 +1,26 @@
+{
+ "job_id": "rmsnorm-smoke-verify-c002-1790358359",
+ "kind": "verify",
+ "candidate_id": "c002",
+ "device_id": 0,
+ "physical_device_id": 0,
+ "passed": false,
+ "workloads": [
+  {
+   "id": "w01",
+   "passed": false,
+   "error": "module 'torch.nn.functional' has no attribute 'rms_norm'"
+  },
+  {
+   "id": "w02",
+   "passed": false,
+   "error": "module 'torch.nn.functional' has no attribute 'rms_norm'"
+  },
+  {
+   "id": "w03",
+   "passed": false,
+   "error": "module 'torch.nn.functional' has no attribute 'rms_norm'"
+  }
+ ],
+ "elapsed_s": 11.58
+}
