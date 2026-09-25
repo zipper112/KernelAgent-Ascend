@@ -196,5 +196,45 @@ def test_cli_stub_commands_return_2(tmp_path):
     assert r.returncode == 2 and json.loads(r.stdout)["error"] == "not-implemented"
 
 
+def test_run_remote_job_payload_includes_workloads(tmp_path, monkeypatch):
+    """给定 _run_remote_job 组装 → 则 payload files 必含 bench/workloads.yaml（§8b v0.2：
+    漏推导致远端读旧残留）且 workloads 透传多张量 inputs spec。"""
+    d = tmp_path / "tasks" / "zeta"
+    d.parent.mkdir()
+    _kda("new-task", str(d))
+    (d / "solution" / "c001").mkdir(parents=True)
+    (d / "solution" / "c001" / "candidate.py").write_text("def kernel(i): return i[0]\n", encoding="utf-8")
+    (d / "reference.py").write_text("def reference(i): return i[0]\n", encoding="utf-8")
+    (d / "bench").mkdir(exist_ok=True)
+    (d / "bench" / "workloads.yaml").write_text(
+        "workloads:\n"
+        "  - id: w01\n"
+        "    axes: {batch: 2, seq: 1, hidden: 8}\n"
+        "    dtype: bf16\n"
+        "    inputs:\n"
+        "      - {name: x, source: main, shape_axes: [batch, seq, hidden]}\n"
+        "      - {name: idx, source: const, shape: [2], value: 0, dtype: int32}\n",
+        encoding="utf-8")
+    (d / "config.yaml").write_text(
+        "execution:\n  remote:\n    enabled: true\n    jump: j\n    host: h\n"
+        "    exec_mode: docker\n    docker_image: img\n    device_id: 3\n", encoding="utf-8")
+    sys.path.insert(0, str(ROOT))
+    import harness.cli as cli
+    from infra.remote import sync as sync_mod
+    seen = {}
+
+    def fake_run_job(target, spec, mirror_root, runner_rel, task_root, out, repo_root=None):
+        seen["spec"] = spec
+        return {"ok": True, "result": {"passed": True, "workloads": []}}
+    monkeypatch.setattr(sync_mod, "run_job", fake_run_job)
+    state = {"task": "zeta"}
+    r = cli._run_remote_job(d, state, "verify", "c001", "l0", Evidence(d))
+    spec = seen["spec"]
+    assert "bench/workloads.yaml" in spec.files and "reference.py" in spec.files
+    wl = spec.workloads[0]
+    assert wl["dtype"] == "bf16" and len(wl["inputs"]) == 2
+    assert wl["inputs"][1]["dtype"] == "int32"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

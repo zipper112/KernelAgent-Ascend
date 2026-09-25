@@ -1,0 +1,34 @@
+# K8 workload：causal_conv1d_update decode 场景（K8 档 〇₂ 节输入画像）
+# 多张量输入 spec（runner make_inputs v0.2）：kernel(inputs=[x, conv_state, weight, bias, indices])
+# axes：batch=并发请求, seq=每请求 token 数（MTP k=3 → 1 或 4）, hidden=KDA conv dim
+workloads:
+  - id: w01
+    axes: {batch: 1, seq: 1, hidden: 4096}
+    dtype: bf16
+    repr: true
+    inputs:
+      - {name: x,          source: main, shape_axes: [batch, seq, hidden]}
+      - {name: conv_state, source: main, shape_axes: [batch, hidden, 3]}   # 3=width-1（k=4 窗）
+      - {name: weight,     source: main, shape_axes: [hidden, 4]}
+      - {name: bias,       source: main, shape_axes: [hidden]}
+      - {name: indices, source: arange, shape: [1]}
+  - id: w02
+    axes: {batch: 16, seq: 1, hidden: 4096}
+    dtype: bf16
+    repr: true
+    inputs:
+      - {name: x,          source: main, shape_axes: [batch, seq, hidden]}
+      - {name: conv_state, source: main, shape_axes: [batch, hidden, 3]}
+      - {name: weight,     source: main, shape_axes: [hidden, 4]}
+      - {name: bias,       source: main, shape_axes: [hidden]}
+      - {name: indices, source: arange, shape: [batch]}
+  - id: w03
+    axes: {batch: 16, seq: 4, hidden: 4096}
+    dtype: bf16
+    repr: true
+    inputs:
+      - {name: x,          source: main, shape_axes: [batch, seq, hidden]}
+      - {name: conv_state, source: main, shape_axes: [batch, hidden, 3]}
+      - {name: weight,     source: main, shape_axes: [hidden, 4]}
+      - {name: bias,       source: main, shape_axes: [hidden]}
+      - {name: indices, source: arange, shape: [batch]}

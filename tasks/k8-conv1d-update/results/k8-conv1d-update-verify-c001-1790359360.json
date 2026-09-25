@@ -1,0 +1,10 @@
+{
+ "job_id": "k8-conv1d-update-verify-c001-1790359360",
+ "kind": "verify",
+ "candidate_id": "c001",
+ "device_id": 0,
+ "physical_device_id": 7,
+ "ok": false,
+ "error": "KeyError: 3",
+ "elapsed_s": 9.77
+}

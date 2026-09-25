@@ -167,11 +167,16 @@ def _run_remote_job(task_root: Path, state: dict, kind: str, candidate_id: str,
     if not rem.get("enabled", False):
         return {"error": "remote-disabled（本地执行模式批 C 实装）"}
     wls_data = yaml.safe_load((task_root / "bench" / "workloads.yaml").read_text(encoding="utf-8"))
-    wls = [{"id": w["id"], "axes": w["axes"], "dtype": w.get("dtype", "fp16")}
-           for w in wls_data["workloads"]]
+    # workload 透传完整定义（含多张量 inputs spec；dtype 缺省补 fp16）
+    wls = []
+    for w in wls_data["workloads"]:
+        item = {"id": w["id"], "axes": w["axes"], "dtype": w.get("dtype", "fp16")}
+        if "inputs" in w:
+            item["inputs"] = w["inputs"]
+        wls.append(item)
     meas = cfg.get("measurement", {})
     files = [f"solution/{candidate_id}/candidate.py"]
-    for extra in ("reference.py",):
+    for extra in ("reference.py", "bench/workloads.yaml"):   # §8b：workload 定义必达（v0.2 修复：漏推致远端读旧残留）
         if (task_root / extra).exists():
             files.append(extra)
     spec = JobSpec(job_id=f"{state['task']}-{kind}-{candidate_id}-{int(time.time())}",
@@ -232,10 +237,9 @@ def _current_direction(task_root: Path, round_: int) -> str | None:
 
 
 def _parent_of(ev: Evidence, candidate_id: str) -> str | None:
-    sols = ev.load_solutions()
-    for s in reversed(sols):
-        if s["candidate_id"] != candidate_id:
-            return s["candidate_id"]
+    """bench-auto 行的 parent 语义：无法从调用序可靠推断（v0.2 诚实化——此前取"最近其他候选"
+    会把先出现的候选挂到后出现的下面，破坏 DAG）。返回 None；真正的 DAG 边由 agent 在
+    solutions.jsonl 补写或 gate 校验时显式声明。"""
     return None
 
 

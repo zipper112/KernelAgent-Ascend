@@ -1,0 +1,10 @@
+{
+ "job_id": "k8-conv1d-update-verify-c001-1790359502",
+ "kind": "verify",
+ "candidate_id": "c001",
+ "device_id": 0,
+ "physical_device_id": 7,
+ "ok": false,
+ "error": "TypeError: full() received an invalid combination of arguments - got (dtype=torch.dtype, fill_value=int, size=tuple, ), but expected one of:\n * (tuple of ints size, Number fill_value, *, tuple of names names, torch.dtype dtype = None, torch.layout layout = None, torch.device device = None, bool pin_memory = False, bool requires_grad = False)\n * (tuple of ints size, Number fill_value, *, Tensor out = None, torch.dtype dtype = None, torch.layout layout = None, torch.device device = None, bool pin_memory = False, bool requires_grad = False)\n",
+ "elapsed_s": 10.23
+}

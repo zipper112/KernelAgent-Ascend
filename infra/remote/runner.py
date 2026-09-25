@@ -58,8 +58,34 @@ _CANON_AXES = ("batch", "seq", "hidden")   # 任务语义序：hidden 必须最�
 
 
 def make_inputs(workload: dict, torch):
-    """axes → shape：canonical 序（batch,seq,hidden）优先，其余按键名字典序补尾。
-    （v0.1 修正：纯 sorted 会得到 batch,hidden,seq —— 归约维跑到倒数第二，测错轴。）"""
+    """单输入模式（默认）：axes → [B,L,dim] 张量。
+    多张量模式：workload['inputs'] 列表，每项 {name, source: main|const, shape_axes, value}——
+    source=main 用主 axes（canonical 序）；source=const 用固定值张量（int 索引等）。
+    顺序即 kernel(inputs) 的列表顺序。"""
+    if "inputs" in workload:
+        outs = []
+        for spec in workload["inputs"]:
+            src = spec.get("source", "main")
+            if src == "main":
+                # shape_axes 每项：轴名（查 axes）或字面量整数（固定维度，如 state_len=3）
+                dims = [workload["axes"][k] if isinstance(k, str) else int(k)
+                        for k in spec.get("shape_axes", [])]
+                dtype = getattr(torch, "float16") if workload.get("dtype", "fp16") == "fp16" else getattr(torch, "bfloat16")
+                outs.append(torch.randn(*dims, dtype=torch.float32).to(dtype).npu())
+            elif src == "arange":
+                # 0..n-1 互异索引（缓存槽语义：每行独立槽位；全同值会造成别名污染）
+                dims = tuple(workload["axes"][k] if isinstance(k, str) else int(k)
+                             for k in spec["shape"])
+                outs.append(torch.arange(dims[0], dtype=torch.int32).npu())
+            elif src == "const":
+                # shape 每项：轴名（查 axes）或字面量整数（与 main 分支同规则）
+                dims = tuple(workload["axes"][k] if isinstance(k, str) else int(k)
+                             for k in spec["shape"])
+                if spec.get("dtype") == "int32":
+                    outs.append(torch.full(size=dims, fill_value=spec.get("value", 0), dtype=torch.int32).npu())
+                else:
+                    outs.append(torch.full(size=dims, fill_value=spec.get("value", 1.0), dtype=torch.bfloat16).npu())
+        return outs
     axes = workload["axes"]
     order = [k for k in _CANON_AXES if k in axes] + sorted(k for k in axes if k not in _CANON_AXES)
     shape = [axes[k] for k in order]

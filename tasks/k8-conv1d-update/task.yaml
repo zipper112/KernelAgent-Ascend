@@ -1,0 +1,27 @@
+# 任务契约：K8 causal_conv1d_update NPU 优化（真实线上目标）
+# 来源：jump:/data01/mahaolong/mnt/GLM-5.3-Flash-Serve/kernels/targets/K8-*.md
+contract:
+  task_name: k8-conv1d-update
+  op_family: conv
+  branch: task/k8-conv1d-update
+  objective: "消除 causal_conv1d_update PyTorch 回退的每序列 host 同步（循环+5×.item()）， decode 段恢复连续执行"
+  correctness:
+    verifier: remote-runner-v0
+    tolerance_ref: "bf16 0.03（dtype 分级表；最终输出回 bf16）"
+    special_behaviors:
+      - "conv_state 原地滑动更新（副作用语义必须保持——final state 回写）"
+      - "pad_slot_id 行跳过（不读不写该 state 槽）"
+      - "activation=None 与 silu 两种模式输出一致语义"
+  performance:
+    baseline: "vllm-ascend causal_conv1d_update PyTorch fallback（ops/causal_conv1d.py:159）"
+    target: "host 同步次数 = 0；wall 加速 ≥3x（小 batch 每步场景）"
+    noise_floor: 0.05
+  allowed:
+    dsl: [pure-torch]        # 本任务先证明去同步收益；Triton-Ascend 版后续候选
+    forbidden:
+      - "不改 bench/ 与 workload 定义"
+      - "不许用 .item()/.cpu()/synchronize（本任务的存在理由就是消灭它们）"
+      - "不许预读 workload 之外的 shape 特化"
+  validation_cmd: "python -m harness.cli verify --task k8-conv1d-update --candidate <cid> --workload-set l0"
+  evaluation_cmd: "python -m harness.cli bench --task k8-conv1d-update --candidate <cid> --workload-set l0"
+  promotion: "smoke-then-promote（de-sync 证明后评 Triton 化）"
