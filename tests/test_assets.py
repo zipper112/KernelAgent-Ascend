@@ -31,9 +31,17 @@ def test_index_entries_paths_exist():
 
 def test_manifest_assets_exist():
     data = _load_yaml(ROOT / "deps" / "vendor-manifest.yaml")
-    missing = [a["name"] for a in data["assets"] if not (ROOT / a["path"]).exists()]
+    # cann-ops 组是重资产（不入 git，ADR-009 修订）：存在则校验、缺失则跳过（bootstrap 可重建）
+    hard = [a for a in data["assets"] if a.get("group") != "cann-ops"]
+    optional = [a for a in data["assets"] if a.get("group") == "cann-ops"]
+    missing = [a["name"] for a in hard if not (ROOT / a["path"]).exists()]
     assert not missing, f"manifest 断链: {missing}"
-    assert len(data["assets"]) >= 70
+    assert len(hard) >= 70
+    if optional:
+        present = [a["name"] for a in optional if (ROOT / a["path"]).exists()]
+        # 有任一 cann-ops 在场则四条都应在（bootstrap 是整体重建）
+        if present:
+            assert len(present) == len(optional), f"cann-ops 部分在场: {present}"
 
 
 def test_manifest_dir_bidirectional():
