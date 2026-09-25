@@ -3,6 +3,7 @@
  "kind": "verify",
  "candidate_id": "c001",
  "device_id": 0,
+ "physical_device_id": 7,
  "passed": true,
  "workloads": [
   {
@@ -27,5 +28,5 @@
    "mismatch_top": []
   }
  ],
- "elapsed_s": 12.46
+ "elapsed_s": 10.52
 }

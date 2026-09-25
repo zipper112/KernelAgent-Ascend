@@ -157,7 +157,8 @@ def main() -> int:
 
     t0 = time.time()
     result = {"job_id": job["job_id"], "kind": job["kind"], "candidate_id": job["candidate_id"],
-              "device_id": job.get("device_id", 0)}
+              "device_id": job.get("device_id", 0),
+              "physical_device_id": job.get("physical_device_id", job.get("device_id", 0))}
     try:
         if job["kind"] == "verify":
             result.update(run_verify(payload, job))

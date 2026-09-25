@@ -32,8 +32,10 @@
 
 - **native 自装树不可用**：pip torch 2.13.0+cpu + torch_npu 2.13.0rc1 + oepkgs CANN 8.5.0.alpha002（nnae 子包 --extract 提取拼树）→ 设备识别 `npu_available: True`，但**全部 AICORE 算子注册失败**（`ParseDynamicKernels` / `ADD_TO_LAUNCHER_LIST_AICORE`，Add/ReduceSum/Cast/Copy 全灭）。补 host_cpu 软链、补装 device-sw-plugin 子包均无效；判为 alpha 版 opp 与驱动 25.5.2 / torch_npu 2.13 组合不兼容，不再投入。
 - **机器已验证组合 = `xllm:glm-clone` 容器**（CANN 8.2.RC1 + torch 2.1.0 + torch_npu 2.1.0.post13，MindIE 2.1rc1 服务镜像）+ **设备直通**（/dev/davinci{N} + davinci_manager + devmm_svm + hisi_hdc）+ **宿主驱动只读挂载**（容器内 /driver 为空壳，libascend_hal.so 必须来自宿主）。RMSNorm fp16 实算 `max_diff 0.00195 ok True`。
-- **RemoteTarget.exec_mode = docker**：sync `_build_exec_cmd` 构造 `sudo docker run` 命令（payload/results/驱动三个挂载 + 设备直通），入口 `infra/remote/container_entry.sh`（source 镜像内 set_env.sh + 驱动库注入 + cd /work/payload）。native 模式保留（ cann_env 字段），供未来自装可用的目标机。
-- **torch_npu 2.1 兼容点**（runner v0.1 已内置）：设备用 `.npu()` 方法（整数 device 走 CUDA 分支报"Torch not compiled with CUDA"）；计时事件 `torch.npu.Event`（CPU-only 枝干无 `torch.Event`，getattr 默认值会先求值崩溃，须 hasattr 三元）。
+- **轻量官方镜像（2026-09-25 晚补测）**：`quay.io/ascend/triton:8.5.0-910b-ubuntu22.04-py3.11-latest-arm64`（本地 tag `ascend-triton:8.5.0-910b-arm64`）——torch 2.7.1+cpu + torch_npu 2.7.1.post8 + **CANN 8.5.0 完整 toolkit** + triton-ascend 环境，解压 12G（MindIE 镜像的 1/3）。smoke 在 device 7 全绿（verify 3/3 + bench 出数）。**镜像供给通道**（jump 无外网 GitHub、docker 18.09 拉 arm64 会 404/卡层）：quay v2 API 匿名 token → 解析 OCI index 取 arm64 manifest → curl 8 路 Range 分块并行下载大层（单连接被 CDN 限流 ~83KB/s，8 路聚合 ~1MB/s）→ sha256 逐层校验 → 自组 docker-load tar（gzip 层直用）→ ssh 流式 `docker load`。
+- **RemoteTarget.exec_mode = docker**：sync `_build_exec_cmd` 构造 `sudo docker run` 命令（payload/results/驱动三个挂载 + 设备直通），入口 `infra/remote/container_entry.sh`（source 镜像内 set_env.sh + 驱动库注入 + cd /work/payload）。native 模式保留（cann_env 字段），供未来自装可用的目标机。
+- **容器内设备重编号**：只直通一张卡时 CANN 在容器内将其编为 0（physical=7 直通后 valid range [0,1)）——job.json 落盘时 docker 模式 device_id 归零、物理号存 physical_device_id（sync._job_json_for_remote），选卡由 `--device /dev/davinci{N}` 表达。
+- **torch_npu 2.x 兼容点**（runner v0.1 已内置）：设备用 `.npu()` 方法（整数 device 走 CUDA 分支报"Torch not compiled with CUDA"）；计时事件 `torch.npu.Event`（CPU-only 枝干无 `torch.Event`，getattr 默认值会先求值崩溃，须 hasattr 三元）；镜像内 torch≥2.7 需 `TORCH_DEVICE_BACKEND_AUTOLOAD=0`（autoload 机制与 torch_npu 冲突）。
 
 ### 3b. e15 遗留清理（共用机器，留给 Phase 1 前处理）
 

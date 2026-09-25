@@ -32,8 +32,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", default="rmsnorm-smoke")
     ap.add_argument("--kinds", default="verify,bench")
-    ap.add_argument("--device", type=int, default=0)
-    ap.add_argument("--image", default="xllm:glm-clone")
+    ap.add_argument("--device", type=int, default=None)   # CLI > config.execution.remote.device_id
+    ap.add_argument("--image", default=None)              # CLI > config.execution.remote.docker_image
     ap.add_argument("--mirror-root", default="~/kda-ascend")
     args = ap.parse_args()
 
@@ -45,8 +45,9 @@ def main() -> int:
     target = RemoteTarget(
         jump=rem.get("jump", "jump"), host=rem.get("host", "yq-e15"),
         exec_mode=rem.get("exec_mode", "docker"),
-        docker_image=rem.get("docker_image", args.image),
+        docker_image=args.image or rem.get("docker_image") or "xllm:glm-clone",
         cann_env=rem.get("cann_env", ""))
+    device = args.device if args.device is not None else rem.get("device_id", 0)
     wls = load_workloads(task_root)
     out_dir = task_root / "results"
     rc = 0
@@ -55,7 +56,7 @@ def main() -> int:
                        task=args.task,
                        files=["solution/c001/candidate.py", "reference.py"],
                        workloads=wls, workload_set="l0",
-                       timeout_s=420, device_id=rem.get("device_id", args.device),
+                       timeout_s=420, device_id=device,
                        extra={"warmup": 3, "samples": 5})
         r = run_job(target, spec, args.mirror_root, "infra/remote/runner.py",
                     task_root, out_dir, repo_root=ROOT)

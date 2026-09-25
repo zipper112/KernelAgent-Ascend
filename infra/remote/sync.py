@@ -158,6 +158,16 @@ def _build_exec_cmd(target: RemoteTarget, spec: JobSpec, payload: str, results: 
             f" --job {_q(f'{payload}/job.json')} --results-dir {_q(results)}")
 
 
+def _job_json_for_remote(spec: JobSpec, docker: bool) -> str:
+    """job.json 落盘内容（可单测）。docker 模式：容器内只直通一张卡，CANN 逻辑编号恒为 0
+    （physical=7 直通后 valid range 是 [0,1)），物理选卡由 --device 直通表达。"""
+    d = json.loads(spec.to_json())
+    if docker:
+        d["physical_device_id"] = d["device_id"]
+        d["device_id"] = 0
+    return json.dumps(d, ensure_ascii=False, indent=1)
+
+
 def run_job(target: RemoteTarget, spec: JobSpec, mirror_root: str, runner_rel: str,
             task_root_local: Path, local_out_dir: Path, timeout_s: int = 900,
             repo_root: Path | None = None) -> dict:
@@ -177,7 +187,7 @@ def run_job(target: RemoteTarget, spec: JobSpec, mirror_root: str, runner_rel: s
     # staging：两源文件按远端布局摆好再打包（push 的 local_root 语义单一化）
     staging = Path(tempfile.mkdtemp(prefix="kda_stage_"))
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tf:
-        tf.write(spec.to_json())
+        tf.write(_job_json_for_remote(spec, docker))
         job_local = Path(tf.name)
     try:
         for f, root in [(runner_rel, repo_root), (entry_rel, repo_root), *[(f, task_root_local) for f in spec.files]]:

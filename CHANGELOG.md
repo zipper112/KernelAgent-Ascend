@@ -2,6 +2,18 @@
 
 本项目的显著变更记录。格式参考 Keep a Changelog，版本 tag 打在 git 上。
 
+## [unreleased] - 2026-09-25（轻量官方镜像通道 + device 7 多卡验证）
+
+### Added
+- **轻量官方镜像供给通道（ADR-011 §3a 补记）**：从 quay.io `ascend/triton` 拉 `8.5.0-910b-...-arm64`（torch 2.7.1+cpu + torch_npu 2.7.1.post8 + CANN 8.5.0 完整 toolkit，解压 12G = MindIE 镜像 1/3）进 e15。通道四件套：quay v2 匿名 token + OCI index 解析（arm64 manifest）、curl 8 路 Range 分块并行（单连接 CDN 限流 83KB/s → 聚合 ~1MB/s）、逐层 sha256 校验、自组 docker-load tar 流式 load。jump 中转文件用后即清（~9G 释放）。
+- 新镜像 smoke 全绿（device 7）：verify 3/3 + bench p50 353/332/481μs。
+
+### Changed
+- **docker 单卡逻辑重编号修复**：容器只直通一卡时 CANN 在容器内编为 0（device7 直通后 valid range [0,1) 实测）——`_job_json_for_remote` 在 docker 模式把 device_id 归零、物理号存 physical_device_id，选卡由 `--device /dev/davinci{N}` 表达；
+- smoke_remote_job CLI > config 优先级修复（--device/--image 此前被 config 覆盖）；
+- container_entry.sh 补 `TORCH_DEVICE_BACKEND_AUTOLOAD=0`（torch≥2.7 autoload 与 torch_npu 冲突）。
+- tests +1（device 重编号单测）共 45 项。
+
 ## [unreleased] - 2026-09-25（Phase 0 NPU 侧验收通过：docker 执行模式 + 端到端出数）
 
 ### Changed

@@ -1,5 +1,6 @@
 """tests/test_remote_sync.py —— Job spec 与远程同步的 dry 单测（不实际 ssh）。"""
 from pathlib import Path
+import json
 
 import pytest
 
@@ -7,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 import sys
 sys.path.insert(0, str(ROOT))
 
-from infra.remote.sync import JobSpec, push_files, _build_exec_cmd  # noqa: E402
+from infra.remote.sync import JobSpec, push_files, _build_exec_cmd, _job_json_for_remote  # noqa: E402
 
 
 def _mk_spec(**kw):
@@ -94,6 +95,14 @@ def test_build_exec_cmd_docker_requires_image():
     from infra.remote.executor import RemoteTarget
     with pytest.raises(AssertionError):
         _build_exec_cmd(RemoteTarget(exec_mode="docker"), _mk_spec(), "/p", "/r", "infra/remote/runner.py")
+
+
+def test_job_json_docker_renumbers_device_to_zero():
+    """docker 直通单卡 → 容器内 CANN 逻辑编号恒 0（实测 device7 直通 valid range [0,1)）。"""
+    d = json.loads(_job_json_for_remote(_mk_spec(device_id=7), docker=True))
+    assert d["device_id"] == 0 and d["physical_device_id"] == 7
+    d2 = json.loads(_job_json_for_remote(_mk_spec(device_id=7), docker=False))
+    assert d2["device_id"] == 7 and "physical_device_id" not in d2
 
 
 if __name__ == "__main__":
