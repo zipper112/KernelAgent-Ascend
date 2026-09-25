@@ -22,5 +22,5 @@ contract:
   validation_cmd: "kda verify --candidate <id> --workload-set full"
   evaluation_cmd: "kda bench --candidate <id> --mode l1"
   promotion:
-    gate: promote-seven-checks
+    gate: promote-eight-checks
     extra: "全量正确性 + l1 加速达标且超 noise_floor"

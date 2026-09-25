@@ -41,9 +41,9 @@ contract:
   # ⑦ 评测命令
   evaluation_cmd: "kda bench --candidate <id> --mode l1"
 
-  # ⑧ 晋升标准（promote 7 项门 + 目标）
+  # ⑧ 晋升标准（promote 8 项门 + 目标，含一条代码质量类 AC——ADR-010）
   promotion:
-    gate: promote-seven-checks   # 见 docs/design/interaction-protocol.md
+    gate: promote-eight-checks   # 见 docs/design/interaction-protocol.md
     extra: "全量 workload 集正确性通过 + l1 加速 >= target 且超 noise_floor"
 ```
 

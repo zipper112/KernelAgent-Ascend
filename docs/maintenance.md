@@ -17,7 +17,7 @@ pytest tests/               # 全部单测无卡可跑
 ```bash
 python tools/check_env.py --full
 # 必须全绿的项目：CANN 环境变量、npu-smi、torch_npu、triton-ascend、msprof、
-# akg_agents 可 import（deps/upstream.md 的钉版 checkout）
+# akg_agents 可 import（third_party/akg/akg_agents 布局，ADR-008/自审批次 B3）
 ```
 
 NPU 架构检测注意：以 `ascendc-env-check` skill 的 `get_npu_arch.py`（asys/DSMI 链）为准，**npu-smi 的 Chip Name 不可信**。代际映射：DAV_2201（A2/A3/910B 系，UB 192KB）/ DAV_3510（950 系，UB 248KB）——config.yaml 的 `arch` 字段决定阈值表与知识路由分支。

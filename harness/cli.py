@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """kda —— KDA-Ascend harness CLI 入口（v0.0 桩）。
 
-v0.0-scaffold：本文件只实现自检类命令（version/status 的一部分），
+v0.0：仅实现 version；其余命令（含 status）均为 Phase 1 桩，
 verify/bench/diagnose/promote/gate 在 Phase 1 落地（见 docs/design/interaction-protocol.md §1）。
 桩的行为：未实现命令打印协议文档定位并退出码 2，防止 agent 误判成功。
 """

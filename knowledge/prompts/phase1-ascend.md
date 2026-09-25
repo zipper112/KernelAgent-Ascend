@@ -29,6 +29,13 @@
 6. 实现首候选 → `kda verify --workload-set l0` → `kda bench --mode l0` → 代表集 l1；
 7. 首候选必须让全量集正确性通过才算 Phase 1 完成。
 
+## 逐轮产出义务（每个工作轮次，硬校验⑤-⑧的来源）
+
+1. **开工**：从 `knowledge/prompts/templates/round-contract.md` 复制填写 `run/round-<N>-contract.md`（主线目标/目标 AC/direction 与 budget/成功标准）；
+2. **收工**：从 `templates/round-summary.md` 复制填写 `run/round-<N>-summary.md`——必须含证据指针、Todo 显式清点、BitLesson Delta 段（add/update/none）；
+3. **送审**：收工 = 写完 summary 后**主动调用 `kda gate --round <N>`**。Stop-hook 自动触发是糖；宿主不支持 hook 或 hook 失效时，这条命令是唯一兜底——不调 gate 的收工不算收工，产出不被计入证据链；
+4. 评审打回（REVISE/REJECT）→ 按反馈修改后进入下一轮（round+1）；`STOP`/熔断 → 停止并等人工。
+
 ## 留痕要求（竞赛五段式之留痕段）
 
 - 每个性能相关候选：benchmark.csv 一行（harness 自动）+ solutions.jsonl DAG 条目；

@@ -27,7 +27,7 @@ roles:
     primary:   {provider: glm, model: "glm-5.3", env_key: GLM_API_KEY}
     fallbacks:
       - {provider: glm, model: "glm-5.3-flash", env_key: GLM_API_KEY}
-  reviewer:          # gate 评审（只读；prompt 由 interaction-protocol §4.2 渲染）
+  reviewer:          # gate 评审（只读；prompt 由 knowledge/prompts/gate-review.md 渲染）
     tier: strong     # 评审用强档：解析契约严格，弱档实测解析失败率高（Phase 1 起观察调参）
     primary:   {provider: glm, model: "glm-5.3", env_key: GLM_API_KEY}
     fallbacks:
@@ -46,5 +46,5 @@ providers:
 
 auto_rules:   # 三条自动调控（harness/models.py 实现；新增规则必须走 ADR）
   - id: tier-default                    # ① writer/reviewer 强档、aux 弱档
-  - id: escalate-on-parse-fail          # ② gate 输出连续 2 次解析失败 → 切 fallbacks[0] 重试 1 次
+  - id: escalate-on-parse-fail          # ② gate 输出连续 2 次解析失败 → 升级重试（reviewer fallbacks 首位；弱档解析率低，降档方向错误已修）
   - id: endpoint-fallback               # ③ 网络类错误按序切 fallbacks；402/429 不重试、走 budget.on_quota_error

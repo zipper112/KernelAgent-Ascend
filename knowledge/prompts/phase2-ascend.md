@@ -14,6 +14,10 @@
 5. 每方向收 before/after（`kda ab`）+ 必要时 L2 复测，证据决定 keep/revise/reject；
 6. 主线停滞 2 轮触发重规划，连续 3 轮熔断（fuse 规则自动执行）。
 
+## 逐轮产出义务（硬校验⑤-⑧的来源）
+
+每轮开工写 `run/round-<N>-contract.md`（Phase 2 必填 direction 条目——熔断②按 direction 聚合连续失败计数；模板见 `knowledge/prompts/templates/round-contract.md`）；收工写 `run/round-<N>-summary.md`（含证据指针/Todo 清点/BitLesson Delta，模板见 `templates/round-summary.md`）；随后**主动调用 `kda gate --round <N>`**（hook 是糖，命令是兜底）。
+
 ## 方向探索模板（每方向一段，写入 round contract）
 
 ```yaml
@@ -33,3 +37,8 @@ exit_criteria: "l1 加速 >=1.1x 且正确性过，或 5 次用尽留证据退�
 ## 周期性全量复验（比赛经验："大改进后跑全量"）
 
 每累计 **3 个 keep**（config.yaml `full_reverify_every_keeps: 3` 可调）触发一次全量集正确性复验（`kda verify --workload-set full`）——防止增量迭代在非代表 workload 上悄悄退化。复验失败 = 该 keep 回滚为 revise。
+
+## 附加条款
+
+- `clauses/living-prompt-protocol.md`（必选）：每完成一轮方向探索或触发换向熔断 → 人回顾证据链 → 更新 target_lift / validation_lift / human_hints → 重跑；
+- `clauses/anti-reward-hacking.md`、`clauses/blindspot-declaration.md`（必选，沿用 Phase 1）。

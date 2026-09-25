@@ -29,4 +29,4 @@
 
 ## 本机 skill 生态
 
-见 skills.yaml；重建方式 = 按 source 路径安装同名 skill 后跑 `bash deps/setup.sh --verify`。
+**已全部 vendor 进仓（ADR-008）**——外部路径（C:/Users/.../.agents/skills）仅作 tools/sync_assets.py 的可选更新源，运行链零依赖。

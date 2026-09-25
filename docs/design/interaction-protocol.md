@@ -16,7 +16,7 @@
 | `kda bench --candidate <id> --mode l0\|l1` | 候选 id | `mean_us, p50_us, p99_us, speedup, samples` | 同上 |
 | `kda ab --a <base_id> --b <cand_id>` | 两候选 | 对称 A/B 报告（同 workload、同接口、交错采样） | 同上 |
 | `kda diagnose --candidate <id>` | 候选 id | `bound, symptoms[], suggestions[3-5]`（各含 evidence 与预期收益） | 0 产出 / 2 失败 |
-| `kda promote --candidate <id>` | 候选 id | 7 项门逐一 `pass/fail + reason` | 0 全过 / 1 有fail / 2 错 |
+| `kda promote --candidate <id>` | 候选 id | 8 项门逐一 `pass/fail + reason` | 0 全过 / 1 有fail / 2 错 |
 | `kda gate --round <N>` | 轮次 | 评审结论（见 §4） | 0 COMPLETE / 1 打回 / 2 解析失败 |
 | `kda log [--tail N] [--actor X]` | 过滤 | audit.log 查询 | 0 |
 | `kda status [--round]` | — | state.json 摘要（当前轮/模式/熔断状态/最佳候选/pause 状态/usage 累计）；`--round` 只输出当前 round 号（hooks 用） | 0 |
@@ -29,10 +29,11 @@ Phase 1 实现顺序：**contract → verify → bench → status → log → ga
 ### 1a. 会话锁（run/lock，双模式互斥）
 
 同一任务**同时只允许一个活动会话**（陪伴或产线）：
-- 获取：会话启动时创建 `run/lock`（JSON：`{mode: companion|pipeline, pid, started_at, host}`），原子创建（O_EXCL）；
-- 冲突：已存在且 pid 活着 → 拒绝启动（退出码 2，提示当前占用方）；pid 已死（陈旧锁，机器重启/进程被杀）→ 自动接管并记 audit；
-- 释放：会话正常退出/checkpoint 暂停时删除；崩溃残留由下一次启动的陈旧锁判定清理；
-- state.json 写方由此收窄：**持有锁的进程**（runner 或 gate）——锁是写权凭证，解决陪伴模式无 runner 时的写权归属（ADR-003 修订）。
+- **创建**：陪伴模式下由**首个 kda 命令创建**（无长驻进程——CLI 调用时原子创建 O_EXCL，内容 `{mode, host, created_at, last_seen}`，每次 CLI 调用刷新 last_seen）；产线模式由 runner 启动时创建；
+- **瞬时持锁**：陪伴模式下每次 CLI 调用（含 gate）是瞬时持锁——调用期间校验并刷新锁，调用结束锁留在磁盘（非删除）；产线模式 runner 全程持锁；
+- **冲突**：锁存在且 last_seen < 30 分钟（活跃）且 mode 不同 → 拒绝；last_seen ≥ 30 分钟（陈旧）→ 自动接管并记 audit；
+- **释放**：gate 输出 COMPLETE/REJECT/STOP、checkpoint 暂停时删除；手动 `kda unlock --stale` 兜底；
+- **state.json 写方统一为：锁持有进程**（陪伴模式 = 瞬时持锁的 CLI 调用；产线模式 = runner）——§2 表与本条冲突时以本条为准（D1 修复）。**round 推进**：gate 判 REVISE/REJECT 后由 gate 调用自身将 state.json 的 round +1；COMPLETE/STOP 不推进。
 
 ### 1b. state.json 正式 schema（v1）
 
@@ -61,9 +62,10 @@ Phase 1 实现顺序：**contract → verify → bench → status → log → ga
 | `docs/benchmark.csv` | 任务根 | 仅 harness（evidence.py） | 性能证据表（§3.1） |
 | `docs/solutions.jsonl` | 任务根 | 仅 harness | 候选 DAG（§3.2） |
 | `docs/audit.log` | 任务根 | 仅 harness（append-only） | 审计根（§3.4） |
+| `run/state.json` | 任务根 | 锁持有进程（§1a 定版：陪伴=瞬时持锁的 CLI，产线=runner） | 循环状态；gitignore 但断点例外见 .gitignore 例外段 |
 | `docs/plan.md.lock` | 任务根 | 仅 harness | `{plan_sha, baseline_sha, locked_at, locked_by}` |
 | `profile/<run>/` | 任务根 | harness | L2 诊断原始报告（gitignore）+ summary.json（入仓） |
-| `run/state.json` | 任务根 | 仅 runner | 循环状态（round、模式、熔断计数、当前最佳）；gitignore |
+| `run/state.json` | 任务根 | 锁持有进程（§1a：陪伴=瞬时持锁 CLI，产线=runner） | 循环状态（schema §1b）；gitignore（断点例外） |
 | `run/round-N-*.md` | 任务根 | agent + gate | 本轮契约 / summary / review（gitignore，摘要入 evidence） |
 
 **写方规则是反作弊地基**：evidence 三件套（csv/jsonl/audit）只有 harness 可写——agent 直接改这三个文件会在 promote 与 gate 双重校验中被抓（行完整性 + audit 缺条目）。
@@ -149,6 +151,7 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 3. **token 预算**：超限先压操作历史（每轮保方向+结果+证据指针），再压 plan 分析；压缩产物落 run/compact-N.md 可审计；
 4. **skill 三层注入**：L0 fundamental（DSL 硬约束，≤20k token 常驻）→ L1 按需切片（路由器选 3-5 个）→ L2 只给索引目录；
 5. **承认闸门**：被注入 skill 必须在 draft/plan 提交 `valuable_aspects` + `kernel_application` 两条结构化承认，gate 硬校验第 10 项核对。
+6. **产线 writer 编辑协议（D2 定版）**：writer 模型不直接写仓库——输出结构化改动（unified diff 或整文件内容，JSON 包裹 `{candidate_id, files: [{path, diff|content}]}`），runner 校验路径白名单（仅 solution/<candidate_id>/ 内）后应用到新候选目录，随即进 L0 门；L0 不过 → 候选作废（reject 留痕），不污染父候选。陪伴模式无此协议（宿主 agent 自带编辑工具，受 hooks/CLI 门禁约束）。
 
 ## 6. 熔断规格（fuse，四道）
 
@@ -165,7 +168,7 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 
 **原则：配额是可恢复的中断，不是崩溃。任何耗尽场景必须以"状态已保存、进程体面退出（码 0）"收场。**
 
-### 7.1 三级预算与合成规则（models.yaml `budget` 段 + 任务 config.yaml `budget` 段）
+### 7.1 多级预算与合成规则（models.yaml `budget` 段 + 任务 config.yaml `budget` 段）
 
 | 级 | 参数 | 触发动作 | 状态值 |
 |---|---|---|---|

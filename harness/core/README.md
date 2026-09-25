@@ -8,7 +8,7 @@
 | `measure.py` | 三层测量：L0 秒级门（import+冒烟+粗计时）/ L1 稳态 A/B（warmup≥3 + L2 cache 清除 + 交错采样≥5 + 对称基线）/ L2 msprof 7 组（调 ops-profiling 流程） | Phase 1（L0/L1）、Phase 2（L2） |
 | `diagnose.py` | L2 数据 → 7 档 Bound 判定（阈值 80% 或最大占比>70%）→ 症状映射 → ≤5 条带证据建议 | Phase 2 |
 | `evidence.py` | 证据链唯一写方：benchmark.csv / solutions.jsonl / audit.log / profile 摘要（schema 见 docs/design/interaction-protocol.md §3） | Phase 1 |
-| `promote.py` | 晋升 7 项门（全量正确/加速超噪声/基线 hash/plan hash/证据行/DAG 父链/audit 无越序） | Phase 1 |
+| `promote.py` | 晋升 8 项门（全量正确/加速超噪声/基线 hash/plan hash/证据行+词表一致/DAG 父链/audit 无越序/代码评审 AC——ADR-010） | Phase 1 |
 | `akg_verifier_adapter.py` | akg KernelVerifier 薄封装（ADR-002），隔离上游 API | Phase 0 |
 
 ## 写方规则（反作弊地基）

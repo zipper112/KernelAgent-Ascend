@@ -21,3 +21,8 @@
 - profile/ 摘要 json（关键方向的 L2 证据）；
 - BitLesson 沉淀 ≥3 条（本轮 summary 的 Delta 段汇总）；
 - 复盘报告 docs/retro.md：每方向一行结论（kept/rejected + 原因 + 证据指针）。
+
+## 逐轮产出义务与独立复验
+
+- 逐轮义务同 Phase 1/2（round contract/summary/主动调 `kda gate`）；
+- **最终交付**：promote 通过后运行 `kda export --candidate <final>`（Phase 1 提供命令）——产出独立交付包（kernel + dispatch + 验证配置），包内附自包含复验命令，可在干净环境由第三方重放（比赛 solution.json 外部验证的等价物，见 ADR-010）。

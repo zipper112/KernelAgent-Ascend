@@ -5,23 +5,30 @@ __pycache__/
 .venv/
 venv/
 
-# 任务运行产物：证据链小文件入仓（docs/ 下 csv/jsonl/audit），以下为可再生成的大文件
-tasks/*/run/
-tasks/*/profile/
-profile/
+# 任务运行产物：排除"目录下所有内容"而非目录本身（Git 规则：对已排除目录内的 ! 再包含永不生效——自审批次修复）
+tasks/*/run/**
+tasks/*/profile/**
+tasks/_template/run/**
+tasks/_template/profile/**
+profile/**
 runs/
 outputs/
 
 # 断点与审计承诺的例外（interaction-protocol §2/§7：state.json 续跑、compact 可审计、profile 摘要入仓）
 !tasks/*/run/state.json
+!tasks/*/run/usage.jsonl
+!tasks/*/run/lock
 !tasks/*/run/compact-*.md
+!tasks/*/run/round-*.md
+# profile 例外（顺序关键，Git 再包含语义实测）：先排除/** → 放行目录遍历 → 只放行 summary.json
+tasks/*/profile/**
+!tasks/*/profile/**/
 !tasks/*/profile/**/summary.json
+!tasks/_template/run/.gitkeep
 
 # 全局预算账本（套餐级，跨任务；ADR-006）
 run-global/
 
-# 模板目录占位（run/ 被忽略但模板需要目录存在）
-!tasks/_template/run/.gitkeep
 *.ncu-rep
 *.npz
 *.npy

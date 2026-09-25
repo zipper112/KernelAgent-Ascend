@@ -17,7 +17,7 @@ draft → plan(kda contract --lock 锁 hash) → round{
 ## gate.py（Phase 1 实现）—— 评审门
 
 - 契约全文：docs/design/interaction-protocol.md §4（输入组装、prompt 固定结构、解析与失败处理、每 5 轮全量审计）；
-- 硬校验 10 项前置（§4.4）——任何一项不过直接打回，不消耗模型调用；
+- 硬校验 11 项前置（§4.4）——任何一项不过直接打回，不消耗模型调用；
 - 解析失败：重试 2 → 升档 1 → 熔断等人工。绝不放行；
 - 评审模型只读（纯 API 调用）。
 

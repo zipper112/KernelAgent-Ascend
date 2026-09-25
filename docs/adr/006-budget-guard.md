@@ -9,7 +9,7 @@
 
 ## 决策
 
-1. **三级预算**：套餐软限（40M tokens，告警不停止）/ 套餐硬限（60M，checkpoint 暂停）/ 任务级（api_calls、墙钟、token_budget，熔断④）。参数在 models.yaml `budget` 段与任务 config.yaml，可调；
+1. **多级预算**（套餐软/硬 + 任务 token/墙钟/调用数）：套餐软限（40M tokens，告警不停止）/ 套餐硬限（60M，checkpoint 暂停）/ 任务级（api_calls、墙钟、token_budget，熔断④）。参数在 models.yaml `budget` 段与任务 config.yaml，可调；
 2. **本地记账**：models.py 每次调用把 usage 追加 `run/usage.jsonl`（GLM 的 usage 字段实测可用，2026-09-25 验证）；判定读累计值，不依赖服务商账单；
 3. **配额错误协议**：HTTP 402/429 → 立即停止一切重试（重试只烧钱或无效）→ checkpoint（state.json 快照 + git commit 已 keep 候选 + audit 记录）→ 退出码 0；
 4. **断点恢复**：runner 重启读 state.json，以 git log 定位 last committed round 续跑；上下文由 compact 产物重建；
