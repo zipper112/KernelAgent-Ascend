@@ -1,0 +1,16 @@
+[project]
+name = "kda-ascend"
+version = "0.2.0"
+description = "Ascend 算子自动迭代优化 harness（KDA 结构 + Humanize 循环 + 竞赛实战）"
+requires-python = ">=3.10"
+dependencies = ["pyyaml"]
+
+[project.scripts]
+kda = "harness.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["harness", "harness.core"]

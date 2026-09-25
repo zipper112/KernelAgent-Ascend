@@ -8,7 +8,7 @@
    - 该区间已有 ≥5 次迭代的失败证据（L2 诊断 + kda ab 记录在案）；
    - 失败原因有诊断支撑（如 bound 判定显示该区间瓶颈不可优化）；
    - 分发逻辑测试覆盖该区间（分派正确性 ≠ kernel 性能，仍需验证）；
-2. 回落分支必须在 solutions.jsonl 与复盘中显式记录（direction: fallback-baseline, status: kept-with-evidence）；
+2. 回落分支必须在 solutions.jsonl 与复盘中显式记录（direction: fallback-baseline, status: keep, fallback: true）；
 3. "处处平庸的统一 kernel"与"分区专用+回落"之间，**默认选后者**——期望值更高（竞赛实证）。
 
 ## 反滥用

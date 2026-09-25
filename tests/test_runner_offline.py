@@ -92,11 +92,11 @@ def test_compare_err_ratio_at_limit_passes():
 
 
 def test_compare_err_ratio_over_limit_fails_with_coords():
-    """给定坏元素比例超 limit → 则 False 且 mismatch_top 给出坐标。"""
+    """给定坏元素比例超 limit → 则 False 且 mismatches 给出坐标（协议 §1 ≤10 条）。"""
     ref = torch.ones(100)
     out = ref.clone(); out[:5] = 100.0
     ok, d = runner.compare(out, ref, 0.01)
-    assert ok is False and 0.0 < d["err_ratio"] <= 0.06 and len(d["mismatch_top"]) >= 1
+    assert ok is False and 0.0 < d["err_ratio"] <= 0.06 and 1 <= len(d["mismatches"]) <= 10
 
 
 def test_compare_aligned_nans_pass():
@@ -226,7 +226,7 @@ def test_run_verify_ref_computed_before_kernel(tmp_path, npu_env):
 
 
 def test_run_bench_with_reference_reports_speedup(tmp_path, npu_env):
-    """给定 payload 带 reference.py → 则每 workload 含 baseline_mean_us 与 speedup_vs_ref。"""
+    """给定 payload 带 reference.py → 则每 workload 含 baseline_mean_us 与 speedup_vs_ref，且 p99 字段在（协议 §1）。"""
     (tmp_path / "candidate.py").write_text(GOOD_KERNEL, encoding="utf-8")
     (tmp_path / "reference.py").write_text(
         "def reference(inputs):\n    return inputs[0]\n", encoding="utf-8")
@@ -234,6 +234,7 @@ def test_run_bench_with_reference_reports_speedup(tmp_path, npu_env):
     w = r["workloads"][0]
     assert r["has_reference"] is True and w["baseline_mean_us"] > 0 and w["speedup_vs_ref"] > 0
     assert r["warmup"] == 2 and r["samples"] == 3
+    assert w["p99_us"] >= w["p50_us"] > 0
 
 
 def test_run_bench_without_reference_no_baseline(tmp_path, npu_env):

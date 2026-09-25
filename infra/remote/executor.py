@@ -9,7 +9,7 @@ Executor 协议（harness/core 依赖注入的接口）：
     pull(remote_paths)   -> 拉回证据文件；大文件留远程只拉摘要（Phase 1）
     probe()              -> 远程环境探测（只读）
 
-v0.0 实现 run + probe；push/pull 为桩（Phase 1 落地 rsync/scp 两跳包装）。
+v0.1 实现 run/push/pull/probe 全协议（push/pull 经 sync.py tar-over-ssh 两跳，Phase 0 已实测）。
 """
 from __future__ import annotations
 

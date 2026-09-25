@@ -12,7 +12,7 @@
 3. **只在实测收益配得上复杂度时**才为某区间做专用 kernel / 专用 tiling；
 4. 打不赢基线的区间：**回落基线是合法输出**（组合 fallback-baseline-legit 条款）——比硬拼一个处处平庸的 kernel 好；
 5. 实现分发逻辑（dispatch by shape），分发本身进入验证范围（每个分派路径都要有 workload 覆盖）；
-6. 全量集 promote：`kda verify --workload-set full` + `kda promote --candidate <final>`（7 项门）。
+6. 全量集 promote：`kda verify --workload-set full` + `kda promote --candidate <final>`（8 项门）。
 
 ## 交付物清单（Phase 3 收尾）
 

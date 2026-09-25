@@ -203,18 +203,27 @@ def run_job(target: RemoteTarget, spec: JobSpec, mirror_root: str, runner_rel: s
         if not r["ok"]:
             return {"ok": False, "stage": "push", **r}
         # job.json 单独走 stdin 通道；顺带预建 results（docker -v 挂载源须先存在且归 ubuntu 所有）
-        r2 = subprocess.run(
-            [*_ssh_base(target),
-             f"timeout 120 ssh -o BatchMode=yes {target.host} 'mkdir -p {_q(payload)} {_q(results)} && cat > {_q(payload + "/job.json")}'"],
-            input=job_local.read_bytes(), capture_output=True, timeout=150)
+        try:
+            r2 = subprocess.run(
+                [*_ssh_base(target),
+                 f"timeout 120 ssh -o BatchMode=yes {target.host} 'mkdir -p {_q(payload)} {_q(results)} && cat > {_q(payload + "/job.json")}'"],
+                input=job_local.read_bytes(), capture_output=True, timeout=150)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "stage": "job.json", "error": "link-timeout>150s", "pushed": 0}
         if r2.returncode != 0:
             return {"ok": False, "stage": "job.json", "error": r2.stderr.decode()[:200]}
         # 2) 远端执行（同步大超时；Phase 1 换 nohup+轮询）
         exec_cmd = _build_exec_cmd(target, spec, payload, results, runner_rel)
         inner = (f"timeout {spec.timeout_s} ssh -o BatchMode=yes {target.host} "
                  f"{shlex.quote(exec_cmd)}")
-        r3 = subprocess.run([*_ssh_base(target), inner], capture_output=True, text=True,
-                            timeout=spec.timeout_s + 120)
+        try:
+            r3 = subprocess.run([*_ssh_base(target), inner], capture_output=True, text=True,
+                                timeout=spec.timeout_s + 120)
+        except subprocess.TimeoutExpired:
+            # §8a 契约：链路失败不抛异常。作业可能已在远端跑完（results/<job_id>.json 已写），
+            # 返回 exec-timeout 让调用方可单独重试 pull（pull_files 幂等）。
+            return {"ok": False, "stage": "exec", "error": f"link-timeout>{spec.timeout_s + 120}s（远端作业可能已完成，可重试 pull）",
+                    "results_path": f"{results}/{spec.job_id}.json"}
         # 3) pull result
         r4 = pull_files(target, [f"{results}/{spec.job_id}.json"], local_out_dir, timeout_s=180)
         result = {"ok": r4["ok"], "stage": "pull" if not r4["ok"] else "done",

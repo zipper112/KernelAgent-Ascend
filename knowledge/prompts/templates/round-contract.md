@@ -16,5 +16,7 @@
   budget: {{≤5——每方向硬上限}}
   exit_criteria: {{达标条件，如 l1 加速 ≥1.1x 且正确性过}}
 - 阻塞/排队事项：{{无则写"无"}}
+- skill-acknowledgment（本轮新注入 skill 的承认，Phase 2/3 必填——硬校验⑩落点）：
+  {{每个新注入 skill 两条：valuable_aspects: 该 skill 里对算子最有价值的具体经验；kernel_application: 打算怎么用到本轮 kernel——本轮无新注入则写 "none: 本轮无新注入"}}
 - 成功标准：{{本轮结束时什么为真才算成}}
 ```

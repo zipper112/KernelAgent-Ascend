@@ -32,7 +32,7 @@ NPU 架构检测注意：以 `ascendc-env-check` skill 的 `get_npu_arch.py`（a
 
 | 上游 | 用途 | 更新步骤 |
 |---|---|---|
-| mindspore-ai/akg（br_agents） | KernelVerifier 当库（ADR-002） | ①改 upstream.md 钉版 commit → ②重跑 akg_verifier_adapter 回归（tests/test_verify_protocol.py + RMSNorm 冒烟）→ ③通过才合并，CHANGELOG 记 deps |
+| mindspore-ai/akg（br_agents） | KernelVerifier 当库（ADR-002） | ①改 upstream.md 钉版 commit → ②重跑 akg_verifier_adapter 回归（tests/test_remote_sync.py（runner 协议） + RMSNorm 冒烟）→ ③通过才合并，CHANGELOG 记 deps |
 | PolyArch/humanize | 循环行为规格参照（ADR-004） | 只影响规格：diff 其 regular-review.md / stop-hook 与本仓库 §4 契约，有实质变化时出 ADR 增补 |
 | 本机 skill 生态（deps/skills.yaml） | 知识路由数据源 | 见 §3 |
 | NVlabs/kda + 比赛仓库 | 方法论参照（只读） | 无需同步；教辅文档在 D:\PyProject\Jev\kda-contest-deep-dive\ |
@@ -56,7 +56,7 @@ NPU 架构检测注意：以 `ascendc-env-check` skill 的 `get_npu_arch.py`（a
 ## 5. 版本与发布
 
 - main + 短命特性分支；约定式 commit：feat/fix/docs/deps/knowledge/tests；
-- 阶段验收打 tag：v0.1-mvp / v0.2-diagnosis / v0.3-knowledge / v1.0；tag 前置条件 = 该阶段验收标准全过（见规划文档 §八）；
+- 阶段验收打 tag：v0.1-mvp / v0.2-diagnosis / v0.3-knowledge / v1.0；tag 前置条件 = 该阶段验收标准全过（见 docs/design/interaction-protocol.md §1 五批任务图（v0.2））；
 - CHANGELOG 在每次 tag 时更新。
 
 ## 6. 故障排查速查

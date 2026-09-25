@@ -1,7 +1,7 @@
 # 任务运行配置（Phase 0 冒烟）
 version: 0
 
-arch: dav_3510                          # 910B4（待 get_npu_arch.py 正式确认代际映射）
+arch: dav_2201                          # 910B4 = 910B 系 → dav_2201（ARCH_PATTERNS/dual-arch 条款口径；此前 dav_3510 为错标）
 dsl: triton-ascend                      # 冒烟用纯 torch 朴素实现（链路验证优先于 DSL）
 device_id: 0
 

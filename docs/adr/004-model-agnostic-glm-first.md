@@ -13,7 +13,7 @@
 ## 决策
 
 1. **自研轻量循环引擎**（harness/control/，工作名 ascend-rlcr）：行为规格照抄 Humanize（评审契约逐条移植、硬校验清单照搬、熔断阈值同款），实现全部走 OpenAI 兼容协议；
-2. **模型层刻意最薄**：`agent-config/models.yaml` 一个文件，role（writer/reviewer/aux）→ {base_url, model, effort} 映射；自动调控仅三条规则：①默认 writer 强档 / reviewer、aux 弱档；②gate 解析连续失败自动升档重试；③端点故障按序降级备配。不做 provider 抽象层大工程；
+2. **模型层刻意最薄**：`agent-config/models.yaml` 一个文件，role（writer/reviewer/aux）→ {base_url, model, effort} 映射；自动调控仅三条规则：①默认 writer 强档 / ~~reviewer、aux 弱档~~（**勘误 2026-09-25**：reviewer 实配 `tier: strong`——弱档解析失败率高，降档方向错误，models.yaml 已修向、以 models.yaml 为准；aux 保持弱档）；②gate 解析连续失败自动升档重试；③端点故障按序降级备配。不做 provider 抽象层大工程；
 3. **Humanize 降级为设计参照 + 可选并行路线**：团队若有 OpenAI 订阅可装原版插件（plan/prompt 格式与本项目的 draft→plan 流程互通）；fork 补丁路线保留为备选，不做默认；
 4. 评审方最小权限：纯 API 调用、只读（无文件写权）——根治竞赛案例③"writer 甩锅 verifier"。
 

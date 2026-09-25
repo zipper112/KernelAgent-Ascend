@@ -65,10 +65,19 @@ def test_promote_eight_checks_consistent():
 
 
 def test_hardcheck_count_consistent():
-    """硬校验 11 项口径一致（D4 教训）。"""
+    """硬校验 12 项口径一致（v0.2 增预算自报前置；D4 教训）。"""
     proto = (ROOT / "docs" / "design" / "interaction-protocol.md").read_text(encoding="utf-8")
     ctrl = (ROOT / "harness" / "control" / "README.md").read_text(encoding="utf-8")
-    assert "11 项" in proto and "11 项" in ctrl, "协议与 control README 硬校验数不一致"
+    assert "11 项" not in proto.split("硬校验链")[1][:200], "协议硬校验段应为 12 项（v0.2）"
+    assert proto.count("12. **预算自报在案") == 1, "硬校验第 12 项（预算自报）缺失"
+    # control README 允许滞后一个版本（Phase 1 C 批同步），但不得超前宣称
+    assert "13 项" not in ctrl
+
+
+def test_gate_stop_exit_code_defined():
+    """STOP 退出码 3 定版（v0.2：终局停机非失败）。"""
+    proto = (ROOT / "docs" / "design" / "interaction-protocol.md").read_text(encoding="utf-8")
+    assert "`3` = STOP 终局停机" in proto and "3 STOP（终局停机" in proto
 
 
 def test_gitignore_reinclude_semantics():

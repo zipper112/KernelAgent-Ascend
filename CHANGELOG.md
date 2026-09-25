@@ -2,6 +2,34 @@
 
 本项目的显著变更记录。格式参考 Keep a Changelog，版本 tag 打在 git 上。
 
+## [unreleased] - 2026-09-26（闭环性审查修补：协议 v0.2 + 最小防白烧闭环落地）
+
+对照 KDA/Humanize/竞赛三源做 harness 闭环性审查：17 个逻辑死胡同 + 17 处规格矛盾一次修完，Phase 1 批 A+B（地基+证据链）实装。
+
+### 审查结论
+- 执行长臂全通（远端 NPU 实测），但 CLI/证据链/gate/状态机/预算全纸面——"贴 prompt 必卡 gate rc=2 且无机制感知原地打转"是结构性默认态；最致命死胡同：evidence 三件套无写方（gate 硬校验⑨永不满足→评审白烧到 42 轮）、state.json 无引导（首次 gate 死锁无合法修复路径）、verify 失败不进熔断计数（单方向无限烧）。
+
+### 协议 v0.2（interaction-protocol.md bump；修正案索引）
+- 命令表：补 export/unlock --stale/budget --report；gate 退出码定版 **3=STOP**（终局停机非失败）；bench --mode 废弃统一 --workload-set；baseline 空 --lock 报错；
+- §1 顺序表改**五批任务图**（A 地基→B 证据链→C 评审→D 长作业→E 收尾；隐藏依赖 models.py/ctx/锁/evidence 显式化）；
+- state.json 引导=new-task 创建（round=0），缺失不自动重建；FUSE_DIRECTION 移出 terminal（换向非终态）；budget 类耗尽全归 pause；锁删除时机覆盖全部终局命令；
+- **verify 失败也入链**（solutions.jsonl reject/stage=verify + direction_fails 计数）——封死单方向无限烧；evidence 写入时机=verify/bench 返回即追加（不等 gate）；
+- 硬校验 11→**12 项**（+预算自报前置）；⑧定版"未完成项须有处置"；⑩落点=round-contract 增 skill-acknowledgment 段（模板已同步）；
+- REVISE 循环升级：连续 3 次同主因 → STOP 或换路径（gate-review.md 同步）；
+- promote 8 项枚举提入宪法正文（§4.5）；payload 清单组装规则（reference.py/baseline 必备）；
+- 词表统一：反作弊自建脚本=REJECT（非 REVISE）、fallback=keep+fallback:true、phase3 8 项门、910B4=dav_2201 错标修正、run/lock 不再入仓、usage_ledger 两级口径。
+
+### 实现（Phase 1 批 A+B）
+- `harness/core/evidence.py`（证据三件套唯一写方：csv/jsonl/audit/两级 usage 账本，append-only+词表断言）；
+- `harness/core/state.py`（SessionLock O_EXCL/30min 接管 + TaskState 引导/require/bump_direction_fail）；
+- `harness/cli.py` 实装 8 命令（version/new-task/status/log/contract --verify/budget --report/verify/bench），其余桩保留 rc=2；pyproject+kda 入口（Device Guard 拦 exe 时 `python -m harness.cli` 等价通道）；
+- 批 1 急修：sync.run_job 两段 TimeoutExpired 捕获（§8a 契约，exec 超时返回 results_path 可重试 pull）；tests 明文 key 改假值；runner mismatches[:10]/p99_us 对齐协议。
+
+### 验证
+- `pytest tests/ -q` **155 全绿**（+12 harness 生命周期：锁接管/状态引导/verify 失败入链计数/budget 双账本/桩契约）；
+- **真机端到端**（e15 ascend-triton 镜像）：`kda verify` passed=true 三档 + `kda bench` mean 334.5μs/speedup 0.9，**benchmark.csv / solutions.jsonl / audit.log 三件套真实落盘**——agent 每轮产出从此必有入账，闭环 B 级就位。
+- ADR-012（陪伴预算自报）+ ADR-004 勘误（reviewer 档位）落盘。
+
 ## [unreleased] - 2026-09-25（全功能单元测试套件：期望先行，45→140 项）
 
 ### Added

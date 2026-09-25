@@ -12,7 +12,8 @@ sys.path.insert(0, str(ROOT))
 
 from infra.secrets import provider  # noqa: E402
 
-KEY = "6f56fdd6c6934fbab2d67cad7628e83f.0oiGWgjWKD4iX137"
+# 测试一律用假 key（真实 key 永不入仓——曾出现在对话记录中已建议轮换）
+KEY = "fake-key-1234567890abcdef.fakefakefakefake"
 
 
 def test_secretref_repr_masked():

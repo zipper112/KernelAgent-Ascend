@@ -15,9 +15,9 @@ runs/
 outputs/
 
 # 断点与审计承诺的例外（interaction-protocol §2/§7：state.json 续跑、compact 可审计、profile 摘要入仓）
+# run/lock 不再包含（v0.2：瞬时运行态，含 host/last_seen，入仓易误导断点判断）
 !tasks/*/run/state.json
 !tasks/*/run/usage.jsonl
-!tasks/*/run/lock
 !tasks/*/run/compact-*.md
 !tasks/*/run/round-*.md
 # profile 例外（顺序关键，Git 再包含语义实测）：先排除/** → 放行目录遍历 → 只放行 summary.json

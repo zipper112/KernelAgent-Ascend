@@ -1,6 +1,6 @@
 # KDA-Ascend 交互协议规格
 
-**版本**：v0.1（v0.0-scaffold 冻结；Phase 1 实现时若变更须 bump 版本并在 CHANGELOG 记录）
+**版本**：v0.2（v0.1 基础上的闭环性修正案：17 处矛盾消解 + 逻辑死胡同规格补全，2026-09-26；变更索引见 CHANGELOG「协议 v0.2」段）
 
 本文件是 harness 的对外接口宪法：CLI 命令表、文件契约、证据链 schema、gate 评审契约全文。agent、人、harness 三方都只认这里定义的接口。
 
@@ -8,23 +8,38 @@
 
 ## 1. CLI 命令表（agent ↔ harness 唯一通道）
 
-约定：所有命令输出 JSON（stdout）+ 固定退出码；每次调用写一条 audit.log。退出码语义：`0` = 通过；`1` = 明确不通过（结果有效，不是错误）；`2` = 协议/环境错误（结果无效）。
+约定：所有命令输出 JSON（stdout）+ 固定退出码；每次调用写一条 audit.log。退出码语义：`0` = 通过；`1` = 明确不通过（结果有效，不是错误）；`2` = 协议/环境错误（结果无效）；`3` = STOP 终局停机（合法评审结论，非失败——仅 gate 使用）。
 
 | 命令 | 输入 | 输出（关键字段） | 退出码语义 |
 |---|---|---|---|
 | `kda verify --candidate <id> [--workload-set l0\|l1\|full]` | 候选 id | `passed, err_ratio, mismatches[≤10], workload_set` | 0 过 / 1 不过 / 2 harness 错 |
-| `kda bench --candidate <id> --mode l0\|l1` | 候选 id | `mean_us, p50_us, p99_us, speedup, samples` | 同上 |
+| `kda bench --candidate <id> [--workload-set l0\|l1\|full]` | 候选 id | `mean_us, p50_us, p99_us, speedup, samples` | 同上（`--mode` 废弃，统一 `--workload-set`） |
 | `kda ab --a <base_id> --b <cand_id>` | 两候选 | 对称 A/B 报告（同 workload、同接口、交错采样） | 同上 |
 | `kda diagnose --candidate <id>` | 候选 id | `bound, symptoms[], suggestions[3-5]`（各含 evidence 与预期收益） | 0 产出 / 2 失败 |
 | `kda promote --candidate <id>` | 候选 id | 8 项门逐一 `pass/fail + reason` | 0 全过 / 1 有fail / 2 错 |
-| `kda gate --round <N>` | 轮次 | 评审结论（见 §4） | 0 COMPLETE / 1 打回 / 2 解析失败 |
+| `kda gate --round <N>` | 轮次 | 评审结论（见 §4） | 0 COMPLETE / 1 REVISE·REJECT（打回）/ 2 解析失败（重试2+升档1后仍失败）/ **3 STOP（终局停机，锁删除、state.terminal=STOP）** |
 | `kda log [--tail N] [--actor X]` | 过滤 | audit.log 查询 | 0 |
 | `kda status [--round]` | — | state.json 摘要（当前轮/模式/熔断状态/最佳候选/pause 状态/usage 累计）；`--round` 只输出当前 round 号（hooks 用） | 0 |
-| `kda contract [--lock\|--unlock --reason R\|--verify]` | — | 任务契约展示 / 锁定（回填 baseline SHA）/ 校验 hash / 人工解锁修改 plan（audit 记 actor=human，解锁后必须重新锁定） | 0 / 1 已变 |
-| `kda new-task <dir>` | 目标目录 | 从 tasks/_template 生成七件套 | 0 / 2 已存在 |
+| `kda contract [--lock\|--unlock --reason R\|--verify]` | — | 任务契约展示 / 锁定（回填 baseline SHA）/ 校验 hash / 人工解锁修改 plan（audit 记 actor=human，解锁后必须重新锁定）；**baseline/ 为空时 --lock 报错退出（码 2）**，不锁空 hash | 0 / 1 已变 / 2 baseline 缺失 |
+| `kda new-task <dir>` | 目标目录 | 从 tasks/_template 生成七件套 + **run/state.json 初始化（round=0, mode 待首命令判定）+ 提示切任务分支** | 0 / 2 已存在 |
+| `kda budget --report --tokens <N> --round <R> [--note X]` | 自报消耗 | 写入两级 usage.jsonl（actor=agent, source=self-report） | 0 / 2 参数错 |
+| `kda export --candidate <id>` | 候选 id | 自包含交付包（代码+workloads+复验命令）+ 第三方复验指令 | 0 / 2 |
+| `kda unlock --stale` | — | 陈旧锁（≥30 分钟）强制接管/删除（audit 记 actor=human|agent） | 0 / 2 锁活跃 |
 | `kda version` | — | 版本与协议文档定位 | 0 |
 
-Phase 1 实现顺序：**contract → verify → bench → status → log → gate → promote → ab → diagnose → new-task**（contract 最先：gate 硬校验③④与 phase1 模板的"锁定后方可编辑"都依赖它）。
+**每个 kda 命令（含查询类）调用即写一条 audit.log**（§3.4）；audit 追加随最早那批命令（contract/verify/new-task）落地，不依赖 `kda log`。
+
+Phase 1 实现顺序（v0.2 改为**五批任务图**，隐藏依赖显式化——原图只列命令导致 models.py/ctx/锁/evidence 全在表外）：
+
+| 批 | 内容 | 为什么这个顺序 |
+|---|---|---|
+| A 地基 | `kda` console script、CLI 骨架（audit 追加+会话锁+state 读写）、new-task（state.json 引导）、version/status/log 最小读版 | 后续一切命令的地基；缺锁=双开双烧，缺 state=round 不推进 |
+| B 证据链 | evidence.py（三件套唯一写方）、verify/bench 实装（成功返回即追加 csv/jsonl/audit；**verify 失败也写 jsonl status=reject, stage=verify 并计入 direction_fails**）、budget --report、contract --lock/--verify | 证据链是 gate 硬校验⑨与 promote 的输入；没有它每轮必打回（评审 token 白烧） |
+| C 评审 | models.py（客户端+usage 记账+升档/fallback）、ctx/render.py、gate.py（硬校验 11 项+解析）、hooks 适配器 | B 的产出在此被消费；评审失败链（重试2+升档1+熔断）随 gate 落地 |
+| D 长作业 | nohup+status 轮询（§8b）、ab/diagnose 实装、profile runner（msprof） | C 之后循环能转，长作业防断连丢结果 |
+| E 收尾 | promote（8 项门）、export、漂移/方向熔断实装、复盘回流 | 收官门禁与交付 |
+
+（批 A+B = 本仓库当前批次；C-E 见 roadmap。）
 
 ### 1a. 会话锁（run/lock，双模式互斥）
 
@@ -32,8 +47,9 @@ Phase 1 实现顺序：**contract → verify → bench → status → log → ga
 - **创建**：陪伴模式下由**首个 kda 命令创建**（无长驻进程——CLI 调用时原子创建 O_EXCL，内容 `{mode, host, created_at, last_seen}`，每次 CLI 调用刷新 last_seen）；产线模式由 runner 启动时创建；
 - **瞬时持锁**：陪伴模式下每次 CLI 调用（含 gate）是瞬时持锁——调用期间校验并刷新锁，调用结束锁留在磁盘（非删除）；产线模式 runner 全程持锁；
 - **冲突**：锁存在且 last_seen < 30 分钟（活跃）且 mode 不同 → 拒绝；last_seen ≥ 30 分钟（陈旧）→ 自动接管并记 audit；
-- **释放**：gate 输出 COMPLETE/REJECT/STOP、checkpoint 暂停时删除；手动 `kda unlock --stale` 兜底；
+- **释放**：**任何终局命令**（gate COMPLETE/STOP、熔断落 terminal 的 CLI 命令、checkpoint 暂停）删除锁并 audit 记录；REVISE/REJECT 不删锁（round+1 后循环继续）；手动 `kda unlock --stale` 兜底；
 - **state.json 写方统一为：锁持有进程**（陪伴模式 = 瞬时持锁的 CLI 调用；产线模式 = runner）——§2 表与本条冲突时以本条为准（D1 修复）。**round 推进**：gate 判 REVISE/REJECT 后由 gate 调用自身将 state.json 的 round +1；COMPLETE/STOP 不推进。
+- **state.json 引导（v0.2 定版）**：由 `kda new-task` 创建（`round:0, mode:"companion"` 缺省——首个 runner 启动时改写为 pipeline）；agent 无写权，若 state.json 缺失且任务目录已存在 → 所有 kda 命令码 2 报 `state-missing: run kda new-task or restore from git`，**不自动重建**（防静默重置计数）。
 
 ### 1b. state.json 正式 schema（v1）
 
@@ -43,10 +59,10 @@ Phase 1 实现顺序：**contract → verify → bench → status → log → ga
  "direction_fails": {"ub-fusion": 1, "vload": 3},
  "stall_count": 1, "last_verdict": "STALLED",
  "pause": null | {"reason": "paused-quota|paused-budget|paused-task-budget|paused-wallclock", "at": "...", "usage_snapshot": 12345678},
- "terminal": null | "MAXITER|FUSE_STALL|FUSE_DIRECTION|COMPLETE",
+ "terminal": null | "MAXITER|FUSE_STALL|COMPLETE|STOP",
  "phase": "P1|P2|P3", "updated_at": "..."}
 ```
-终态（terminal 非空）与可恢复暂停（pause 非空）互斥；`stall_count`/`direction_fails` 是熔断②③的计数载体。
+终态（terminal 非空）与可恢复暂停（pause 非空）互斥；`stall_count`/`direction_fails` 是熔断②③的计数载体。**FUSE_DIRECTION 不在 terminal 枚举**（v0.2：方向熔断=强制换向，循环继续，非终态——§6 口径统一）。**budget 类耗尽全部归 pause**（§7.1），不入 terminal。
 
 ## 2. 文件契约（人 / agent / harness 三方共享状态）
 
@@ -65,8 +81,9 @@ Phase 1 实现顺序：**contract → verify → bench → status → log → ga
 | `run/state.json` | 任务根 | 锁持有进程（§1a 定版：陪伴=瞬时持锁的 CLI，产线=runner） | 循环状态；gitignore 但断点例外见 .gitignore 例外段 |
 | `docs/plan.md.lock` | 任务根 | 仅 harness | `{plan_sha, baseline_sha, locked_at, locked_by}` |
 | `profile/<run>/` | 任务根 | harness | L2 诊断原始报告（gitignore）+ summary.json（入仓） |
-| `run/state.json` | 任务根 | 锁持有进程（§1a：陪伴=瞬时持锁 CLI，产线=runner） | 循环状态（schema §1b）；gitignore（断点例外） |
-| `run/round-N-*.md` | 任务根 | agent + gate | 本轮契约 / summary / review（gitignore，摘要入 evidence） |
+| `docs/plan.md.lock` | 任务根 | 仅 harness | `{plan_sha, baseline_sha, locked_at, locked_by}` |
+| `profile/<run>/` | 任务根 | harness | L2 诊断原始报告（gitignore）+ summary.json（入仓） |
+| `run/round-N-*.md` | 任务根 | agent + gate | 本轮契约 / summary / review（gitignore，摘要入 evidence）；**round-N-review.md（评审原文）在解析前先落盘**——解析失败的那次评审 token 不沉没，供人工检视与降档分析 |
 
 **写方规则是反作弊地基**：evidence 三件套（csv/jsonl/audit）只有 harness 可写——agent 直接改这三个文件会在 promote 与 gate 双重校验中被抓（行完整性 + audit 缺条目）。
 
@@ -88,6 +105,12 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 ```
 
 约束：`parent_id` 必须指向已存在候选（首候选 parent 为 null）；`status ∈ {keep, revise, reject}`（与 verdict 同词表）；promote 校验整链可溯到根；**被否决候选 status=reject 同样保留**（竞赛"否决留痕"经验）；回落基线分支记 `"direction":"fallback-baseline","status":"keep","fallback":true`（对应 fallback-baseline-legit 条款）。
+
+**候选 id 规则（v0.2）**：`c<三位顺序号>`（c001 起，单调递增，不跳号不复用）；id 由 agent 分配，**gate 硬校验⑤⑥执行时顺带校验唯一性与 parent 存在性**（撞名/跳号/悬空 parent = 码 2 打回）；revise 不开新目录（原地改同一 `<cid>`），只有新假设/新方向才开新 id——DAG 的"边"是假设演化，不是编辑历史。
+
+**verify 失败也入链（v0.2，封死单方向无限烧）**：`kda verify` 未通过的候选**同样写一行 solutions.jsonl**（`status:"reject", stage:"verify", round`），并**计入 direction_fails**（该候选 round-N-contract 声明的 direction）——熔断②从"过了 bench 的 reject 才计数"改为"任何 reject 都计数"。verify 崩溃（码 2 harness 错）不计数不计链（环境问题归 infra，不是方向失败）。
+
+**evidence 写入时机（v0.2）**：verify/bench 命令**成功返回即追加**（csv/jsonl/audit 三处一次写齐，不等 gate、不等 round 收口）——硬校验⑨的本轮增量由此保证；gate/promote 只读不写 evidence。
 
 ### 3.3 profile/<run>/summary.json（L2 摘要，入仓）
 
@@ -139,10 +162,24 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 5. 本轮 round-N-contract.md 存在；
 6. 本轮 round-N-summary.md 存在；
 7. summary 含 BitLesson Delta 段（add/update/none 三值之一）；
-8. 无未完成 todo 声明（summary 中显式清点）；
+8. 无未完成 todo **无处置**——summary 允许列未完成项，但每项必须带处置标记（继续/换向/升级问人三选一，与 round-summary 模板一致；解析规则：`[ ]` 行缺处置标记 = 打回，有处置 = 放行）；
 9. 本轮至少一条 benchmark.csv 增量（性能轮）或正确性证据（研究轮）——"性能轮"判定：本轮 round contract 含 direction 条目；否则为研究轮；
-10. 已注入 skill 的承认记录存在（valuable_aspects + kernel_application 两条，见 §5.5）；
-11. **大文件检测**（Humanize 移植）：solution/ 下本轮改动文件 >2000 行 → 打回并要求拆分（防巨型生成物逃过评审）。
+10. 已注入 skill 的承认记录存在（valuable_aspects + kernel_application 两条，见 §5.5）——**落点（v0.2）**：Phase 1 承认写 draft/plan（锁定前）；Phase 2/3 动态路由的新 skill 承认写**本轮 round-N-contract.md 的 skill-acknowledgment 段**（结构同两条），不改锁死的 plan；
+11. **大文件检测**（Humanize 移植）：solution/ 下本轮改动文件 >2000 行 → 打回并要求拆分（防巨型生成物逃过评审）；
+12. **预算自报在案（陪伴模式）**：本轮 `kda budget --report` 至少一条（§7.2a）——不自报不送审（防最大头消耗脱离账本）。
+
+**REVISE 循环升级（v0.2，补 Humanize"卡住升级链"缺口）**：连续 3 次 REVISE 且主因相同（评审 issue 首条同类）→ gate 在第 3 次评审 prompt 注入升级指令：评审输出改为 STOP（终局停机等人工）或明确换向建议——不允许同一不可解 issue 空转到 42 轮上限。
+
+## 4.5 promote 8 项门（v0.2 枚举提入宪法；此前只在 core/README）
+
+1. 契约完整（task.yaml 8 槽非空、plan 锁有效）；
+2. 全 workload 集 verify 通过（full set，含 NaN/Inf 边界与特殊行为项）；
+3. speedup ≥ 契约 target 且相对**锁定 baseline**（非相对父候选）；
+4. baseline 溯源有效（.lock 的 baseline_sha 与 baseline/ 实际内容一致）；
+5. 证据链完整（benchmark.csv 有该候选行；solutions.jsonl 链可溯到根；audit 无越序）；
+6. 噪声稳健（复跑 3 次变异系数 < 契约 noise_floor）；
+7. 无越序操作（audit 校验：不存在 verify 未过但出现 bench 的条目）；
+8. 轻量代码评审 AC（对最终 diff 的结构化评审，Phase 2 接 ascendc-code-review skill 前为 agent 自评+人复核）。
 
 ## 5. 上下文组装协议（ctx/，摘要；完整实现规格在 harness/ctx/README.md）
 
@@ -160,7 +197,7 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 | 全局轮次 | round > 42（config.yaml 可调） | 终止，标记 MAXITER |
 | 方向失败 | 同 direction 连续 3 次 reject | 强制换向（下一轮上下文注入"禁用该方向"） |
 | 主线停滞 | MAINLINE_VERDICT 连续 2 轮 STALLED/REGRESSED | 强制重规划（重读 plan + 重写 round contract）；连续 3 轮 → 终止 |
-| 预算 | API 调用数或墙钟超 config.yaml | 终止，保存断点（可续跑） |
+| 预算 | API 调用数或墙钟超 config.yaml | **checkpoint 暂停**（pause 态，非终态——v0.2 与 §7.1/§1b 口径统一），保存断点可续跑 |
 
 所有熔断事件写 audit.log（actor=harness, action=fuse）并在 status 中可见。
 
@@ -184,7 +221,11 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 
 - **全局账本**（套餐级判定读它）：`run-global/usage.jsonl`（仓库根，gitignored，跨任务累计）——每次调用追加 `{ts, task, role, model, prompt_tokens, completion_tokens, cumulative_global}`；
 - **任务账本**（任务级判定与 status 展示）：`tasks/<task>/run/usage.jsonl`（同结构，`cumulative_task`）；
-- GLM 返回的 `usage` 字段实测可用（2026-09-25 验证）；models.py 是唯一写方。
+- GLM 返回的 `usage` 字段实测可用（2026-09-25 验证）；models.py 是**API 调用**的唯一写方。
+
+### 7.2a 陪伴模式自报通道（v0.2 增补，ADR-012）
+
+陪伴模式下最大头消耗是宿主 agent 会话本身（不经 models.py，账本结构性盲区）。对策：**agent 每轮收工时自报**——`kda budget --report --tokens <N> --round <R>` 追加两级账本（`source:"self-report", actor:"agent"`）；数值来自宿主 API 返回的会话 usage（agent 可得）。自报不可强制精确，但 gate 硬校验⑫强制"不自报不送审"，保证覆盖率；软/硬限判定对自报值与 API 值**合并累计**（同一 cumulative 字段）。models.yaml `usage_ledger` 字段废弃单值口径，改为引用本节两级路径。
 
 ### 7.3 Checkpoint（断点保存）内容与恢复
 
@@ -229,4 +270,5 @@ workdir 语义：RemoteTarget.workdir 非空时 run() 自动 `cd <workdir> &&`�
 - JobSpec schema 与 push/pull 实现见 `infra/remote/sync.py`；远端执行器 `infra/remote/runner.py`（自包含，无本地依赖）；
 - **执行模式（RemoteTarget.exec_mode，config.execution.remote）**：`docker`（e15 已验证路径：镜像自带可用 CANN 栈，设备直通 + payload/results/宿主驱动三挂载，入口 `infra/remote/container_entry.sh`；native 自装 CANN 8.5.alpha002 AICORE 全灭，见 ADR-011 §3a）/ `native`（source cann_env 后直跑，备用）；
 - **候选与 oracle 定位（runner v0.1）**：候选两级回退 `candidate.py`（扁平）→ `solution/<candidate_id>/candidate.py`（仓内布局）；oracle 优先任务自带 `reference.py`（暴露 reference(inputs)），缺省回退内置 RMSNorm（正式任务必须自带）；
+- **payload 文件清单组装规则（v0.2）**：harness（非 agent）组装 JobSpec.files，**必须包含** `solution/<cid>/candidate.py` + `reference.py`（任务根，oracle）；bench 作业另含 `baseline/` 内文件（锁定基线同机测速，speedup 口径=契约④）；清单缺 reference.py 且任务无 baseline → verify 可跑（内置 RMSNorm 回退）但 bench 返回 `has_reference:false`、无 speedup，evidence 记 `speedup:n/a`（硬校验⑨不因此打回，promote ④会拦）；
 - 同步大超时执行；Phase 1 长任务换 nohup + status 文件轮询（防两跳断连丢作业）。

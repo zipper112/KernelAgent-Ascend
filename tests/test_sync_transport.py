@@ -303,5 +303,44 @@ def test_run_job_native_uses_cann_env(tmp_path, monkeypatch):
     assert "source $HOME/kda-ascend/env.sh" in seen["exec"] and "docker" not in seen["exec"]
 
 
+def test_run_job_exec_timeout_returns_dict_not_raises(tmp_path, monkeypatch):
+    """给定 exec 段链路超时（TimeoutExpired）→ 则返回 {ok:False, stage:'exec'} 且带
+    results_path 提示可重试 pull——不抛异常（§8a 契约，B-7 修复）。"""
+    repo, task = _mk_repo(tmp_path)
+
+    def fake_run(cmd, **kw):
+        s = str(cmd)
+        if kw.get("input") is not None:
+            return _cp(0)
+        if "mkdir -p" in s or "tar xf" in s:
+            return _cp(0)
+        if "docker run" in s:
+            raise subprocess.TimeoutExpired(cmd="ssh", timeout=99)
+        return _cp(0)
+
+    monkeypatch.setattr(sync.subprocess, "run", fake_run)
+    r = sync.run_job(TGT, sync.JobSpec(**SPEC), "~/kda-ascend", "infra/remote/runner.py",
+                     task, tmp_path / "o", repo_root=repo)
+    assert r["ok"] is False and r["stage"] == "exec"
+    assert "link-timeout" in r["error"] and r["results_path"].endswith("j9.json")
+
+
+def test_run_job_jobjson_timeout_returns_dict(tmp_path, monkeypatch):
+    """给定 job.json 段超时 → 则 {ok:False, stage:'job.json'}，不抛异常。"""
+    repo, task = _mk_repo(tmp_path)
+
+    def fake_run(cmd, **kw):
+        if kw.get("input") is not None and b"job_id" in kw.get("input", b""):
+            raise subprocess.TimeoutExpired(cmd="ssh", timeout=150)
+        if kw.get("input") is not None:
+            return _cp(0)
+        return _cp(0)
+
+    monkeypatch.setattr(sync.subprocess, "run", fake_run)
+    r = sync.run_job(TGT, sync.JobSpec(**SPEC), "~/kda-ascend", "infra/remote/runner.py",
+                     task, tmp_path / "o", repo_root=repo)
+    assert r["ok"] is False and r["stage"] == "job.json"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -110,7 +110,7 @@ def compare(out, ref, limit: float):
     err_ratio = float(bad.sum()) / max(int(finite.sum()), 1)
     passed = err_ratio <= limit     # 错误元素比例容忍（akg 方案）
     return passed, {"err_ratio": err_ratio, "limit": limit,
-                    "mismatch_top": bad.nonzero()[:3].tolist()}
+                    "mismatches": bad.nonzero()[:10].tolist()}   # 协议 §1：mismatches[≤10]
 
 
 def _time_fn(fn, inputs, torch, l2buf, warmup: int, samples: int) -> list[float]:
@@ -145,7 +145,9 @@ def run_bench(payload: Path, job: dict) -> dict:
     for wl in job["workloads"]:
         inputs = make_inputs(wl, torch)
         ts = _time_fn(mod.kernel, inputs, torch, l2buf, warmup, samples)
-        entry = {"id": wl["id"], "mean_us": sum(ts) / len(ts), "p50_us": ts[len(ts)//2], "times": ts}
+        entry = {"id": wl["id"], "mean_us": sum(ts) / len(ts), "p50_us": ts[len(ts)//2],
+                 "p99_us": ts[max(0, (len(ts) * 99 + 99) // 100 - 1)],   # 协议 §1 bench 输出含 p99
+                 "times": ts}
         if has_ref:
             rb = _time_fn(ref_fn, inputs, torch, l2buf, warmup, samples)
             entry["baseline_mean_us"] = sum(rb) / len(rb)

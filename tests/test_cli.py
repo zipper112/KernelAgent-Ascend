@@ -1,18 +1,15 @@
-"""tests/test_cli.py —— harness/cli.py 桩契约测试。
-
-期望先行：version 出 JSON 且 rc=0；未实现命令出 not-implemented 且 rc=2（防 agent 误判成功）。
-"""
+"""tests/test_cli.py —— CLI 顶层契约（v0.2：version/桩命令/无参；详细生命周期在 test_harness_loop）。"""
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CLI = ROOT / "harness" / "cli.py"
 
 
 def _run(*args):
-    return subprocess.run([sys.executable, str(CLI), *args], capture_output=True, text=True, timeout=30)
+    return subprocess.run([sys.executable, "-m", "harness.cli", *args],
+                          capture_output=True, text=True, timeout=60, cwd=str(ROOT))
 
 
 def test_cli_version_outputs_json():
@@ -20,15 +17,15 @@ def test_cli_version_outputs_json():
     r = _run("version")
     assert r.returncode == 0
     data = json.loads(r.stdout)
-    assert data["version"] == "0.0.0-scaffold" and data["protocol"].endswith("interaction-protocol.md")
+    assert data["version"].startswith("0.2.") and data["protocol"].endswith("interaction-protocol.md")
 
 
-def test_cli_unimplemented_command_rc2():
-    """给定任意未实现命令（verify）→ 则 rc=2 且输出 not-implemented（防误判成功）。"""
-    r = _run("verify")
-    assert r.returncode == 2
-    data = json.loads(r.stdout)
-    assert data["error"] == "not-implemented" and data["command"] == "verify"
+def test_cli_stub_commands_rc2():
+    """给定批 C-E 桩命令（gate/promote/export）→ 则 rc=2 且 not-implemented（防误判成功）。"""
+    for cmd in ("gate", "promote", "export"):
+        r = _run(cmd, "--task", "rmsnorm-smoke")
+        assert r.returncode == 2, cmd
+        assert json.loads(r.stdout)["error"] == "not-implemented"
 
 
 def test_cli_no_args_usage_error():

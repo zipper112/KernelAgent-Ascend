@@ -1,0 +1,9 @@
+{"ts": "2026-09-26T01:26:36", "actor": "agent", "action": "budget-report", "target": "", "round": 1, "detail": {"tokens": 15000, "cumulative_global": 15000, "cumulative_task": 15000}}
+{"ts": "2026-09-26T01:27:02", "actor": "harness", "action": "kda gate", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T01:27:02", "actor": "harness", "action": "kda promote", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T01:27:03", "actor": "harness", "action": "kda export", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T01:28:02", "actor": "agent", "action": "kda verify", "target": "c001", "round": 0, "detail": {"passed": true, "err_ratio": [0.0, 0.0, 0.0]}}
+{"ts": "2026-09-26T01:28:28", "actor": "agent", "action": "kda bench", "target": "c001", "round": 0, "detail": {"mean_us": 334.5}}
+{"ts": "2026-09-26T01:28:46", "actor": "harness", "action": "kda gate", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T01:28:46", "actor": "harness", "action": "kda promote", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T01:28:47", "actor": "harness", "action": "kda export", "target": "", "round": null, "detail": {"stub": true}}

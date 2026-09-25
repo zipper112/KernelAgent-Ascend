@@ -12,7 +12,7 @@
 
 - 正确性判定只走 `kda verify`（harness/core/verify.py）；
 - 该验证器内置 NaN 同位检查与 Inf 位置+符号检查——**不存在"漏检 NaN"的配置**；
-- gate 发现任务工作区内存在 agent 自建的验证/对比脚本被用于结论 → 直接 REVISE 并记录审计。
+- gate 发现任务工作区内存在 agent 自建的验证/对比脚本被用于结论 → 末行直接 REJECT 并记录审计（v0.2 与 gate-review.md 统一：自建验证脚本用于结论 = REJECT 非 REVISE）。
 
 ## 角色分离条款（防案例③"writer 甩锅 verifier"）
 
