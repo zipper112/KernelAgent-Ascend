@@ -183,6 +183,17 @@ class AutonomousLoop:
             cid = sols[-1]["candidate_id"] if sols else cid
         skills_txt = "\n\n".join(
             f"### skill {s['id']}（{s['skill']}）\n{s['excerpt']}" for s in research["skills"]) or "（router 未命中）"
+        import yaml as _y
+        _dsl = _y.safe_load((self.task / "task.yaml").read_text(encoding="utf-8")) \
+                .get("contract", {}).get("allowed", {}).get("dsl", ["pure-torch"])
+        if "triton-ascend" in _dsl:
+            iface = ("kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；"
+                     "triton 3.5.0 + triton_ascend 3.2.2 + torch 2.10（容器内）。"
+                     "Triton 源码写在 candidate.py 顶部，kernel() 内调用编译好的 triton kernel；"
+                     "首次调用 JIT 编译即可（warmup 会覆盖）。")
+        else:
+            iface = ("kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；"
+                     "纯 torch_npu（torch 2.7.1+torch_npu 2.7.1，无 triton）。")
         prompt = f"""你是 Ascend NPU kernel 优化 agent。任务契约见下。请基于【调研材料】写候选 kernel。
 
 ## 任务契约（摘）
@@ -192,7 +203,7 @@ class AutonomousLoop:
 {(self.task / 'bench' / 'workloads.yaml').read_text(encoding='utf-8')[:600]}
 
 ## 接口约定（必须遵守）
-kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 torch_npu（torch 2.7.1+torch_npu 2.7.1，无 triton）。
+{iface}
 
 ## 调研材料（router 命中知识，必须利用；未命中则声明盲区）
 ### router 结果
@@ -208,24 +219,28 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
 ## 上一轮评审反馈
 {feedback or '（首轮）'}
 
-## 输出格式（严格 JSON，无 markdown 代码围栏）
-{{"direction": "<方向名>", "hypothesis": "<一句话假设>",
-  "knowledge_used": ["<引用的 skill id 或 production 条目>"],
-  "code": "<candidate.py 完整内容>"}}
+## 输出格式（分隔符协议——代码不转义，防截断浪费）
+先输出三行元信息，然后代码块，总共严格控制在 250 行以内（精炼优先，注释从简）：
+DIRECTION: <方向名>
+HYPOTHESIS: <一句话假设>
+KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
+===CODE===
+<candidate.py 完整内容，纯文本不转义>
+===END===
 """
         raw = self.models.chat("writer", [{"role": "user", "content": prompt}],
                                temperature=0.2, max_tokens=16384,
                                purpose=f"round{round_}-write")
-        d = self._parse_candidate_json(raw)
+        d = self._parse_candidate(raw)
         if d is None:
-            # 截断/畸形重试一次：要求只补 JSON（temperature 0 保一致性）
+            # 截断/畸形重试一次：要求只补代码（temperature 0 保一致性）
             raw2 = self.models.chat(
                 "writer",
                 [{"role": "user", "content": prompt},
                  {"role": "assistant", "content": raw[:12000]},
-                 {"role": "user", "content": "上面的 JSON 不完整或非法。重新输出【完整】的单一 JSON 对象（code 字段内的换行用 \\n 转义），不要任何解释或 markdown 围栏。"}],
+                 {"role": "user", "content": "输出不完整或格式不符。重新按分隔符协议输出完整候选（DIRECTION/HYPOTHESIS/KNOWLEDGE 三行 + ===CODE=== 块），250 行内。"}],
                 temperature=0.0, max_tokens=16384, purpose=f"round{round_}-write-retry")
-            d = self._parse_candidate_json(raw2)
+            d = self._parse_candidate(raw2)
         if d is None or "code" not in d:
             # 解析失败不再炸循环：记审计 + 返回错误占位候选（本轮 review 判 REVISE，下轮带反馈重写）
             self.ev.log_audit("harness", "write-parse-fail", target=cid, round_=round_,
@@ -264,6 +279,37 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
                                   "knowledge_used": d.get("knowledge_used", []),
                                   "hypothesis": str(d.get("hypothesis"))[:150]})
         return {"cid": cid, **d}
+
+    @staticmethod
+    def _parse_candidate(raw: str) -> dict | None:
+        """分隔符协议解析：DIRECTION/HYPOTHESIS/KNOWLEDGE 三行 + ===CODE=== ... ===END=== 块。
+        代码零转义（Triton 任务的 JSON 转义会浪费 ~20% 输出预算且易截断）。"""
+        if not raw or not raw.strip():
+            return None
+        t = raw.strip()
+        # 剥外层围栏（模型偶发习惯）
+        t = re.sub(r"^```[a-zA-Z]*\n?", "", t)
+        d: dict = {}
+        for key, tag in (("direction", "DIRECTION"), ("hypothesis", "HYPOTHESIS"), ("knowledge_used", "KNOWLEDGE")):
+            m = re.search(rf"^{tag}:\s*(.+)$", t, re.M)
+            if m:
+                v = m.group(1).strip()
+                d[key] = [k.strip() for k in v.split(",")] if key == "knowledge_used" else v
+        # code 块：===CODE=== 到 ===END===（END 缺失=截断，取到串尾）
+        m = re.search(r"===CODE===\s*\n(.*?)(?:\n===END===|\Z)", t, re.S)
+        if not m:
+            return None
+        code = m.group(0)
+        # 只保留 CODE 标记之后的内容
+        code = code.split("===CODE===", 1)[1]
+        code = re.sub(r"^\s*\n", "", code)
+        code = re.sub(r"\n?===END===\s*$", "", code)
+        if not code.strip():
+            return None
+        d["code"] = code
+        if "direction" not in d:
+            d["direction"] = "unspecified"
+        return d
 
     @staticmethod
     def _parse_candidate_json(raw: str) -> dict | None:
