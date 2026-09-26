@@ -21,7 +21,7 @@ budget:
 execution:
   remote:
     enabled: true
-    jump: jump
+    jump: ""        # 空=harness 已在 jump 上，单跳直连 yq-e15
     host: yq-e15
     mirror_root: "~/kda-ascend"
     device_id: 7                        # 与冒烟任务分卡，互不干扰

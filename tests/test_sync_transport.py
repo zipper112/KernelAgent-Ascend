@@ -86,18 +86,18 @@ def test_push_files_success_three_legs(tmp_path, monkeypatch):
 
 
 def test_push_files_jump_failure_returns_dict(tmp_path, monkeypatch):
-    """给定 jump 段 rc=1 → 则 {ok:False, error 含 jump 传输失败}，不抛异常。"""
+    """给定中转段 rc=1 → 则 {ok:False, error 含 中转传输失败}，不抛异常。"""
     (tmp_path / "a.py").write_text("x=1\n", encoding="utf-8")
 
     def fake_run(cmd, **kw):
         remote = cmd[-1] if isinstance(cmd, list) else str(cmd)
-        if remote.startswith("cat >"):          # 第一段：jump 收 tar
+        if remote.startswith("cat >"):          # 第一段：中转收 tar
             return _cp(1, err="ssh: connect fail")
         return _cp(0)
 
     monkeypatch.setattr(sync.subprocess, "run", fake_run)
     r = sync.push_files(TGT, tmp_path, ["a.py"], "/tmp/p")
-    assert r["ok"] is False and "jump" in r["error"]
+    assert r["ok"] is False and "中转" in r["error"]
 
 
 def test_push_files_host_failure_returns_dict(tmp_path, monkeypatch):

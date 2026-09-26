@@ -19,3 +19,7 @@
 ## 失败教训（BitLesson 提炼）
 - 输出必须 250 行内紧凑（长输出被思维链吃光预算→空 content）
 - kernel() 签名严格 kernel(inputs)->Tensor（inputs 与 reference.py 一致），别自创接口
+
+## 种子候选（battle2 遗产，已恢复）
+- solution/c019/candidate.py：单派发版，verify 全过（err_ratio 0.0/0.0/0.0，83 行）
+- 冷启动第一轮应直接 bench c019 建立真实基线行，writer 从它起步精修（勿从零重写）

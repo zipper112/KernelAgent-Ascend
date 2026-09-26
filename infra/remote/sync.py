@@ -56,7 +56,19 @@ class JobSpec:
 
 
 def _ssh_base(target: RemoteTarget) -> list[str]:
-    return ["ssh", "-o", "BatchMode=yes", target.jump]
+    """SSH 通道前缀：jump 非空=两跳（本地→jump→host，inner 层再 ssh host）；
+    jump 空=单跳直连（harness 已跑在 jump 上——外层直接 ssh host，inner 命令不再包 ssh）。"""
+    if target.jump:
+        return ["ssh", "-o", "BatchMode=yes", target.jump]
+    return ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", target.host]
+
+
+def _wrap_inner(target: RemoteTarget, cmd: str, timeout_s: int) -> str:
+    """inner 命令包装：两跳模式套 ssh host；单跳模式裸命令（外层已直达）。"""
+    if target.jump:
+        return (f"timeout {timeout_s} ssh -o BatchMode=yes "
+                f"-o StrictHostKeyChecking=accept-new {target.host} {shlex.quote(cmd)}")
+    return f"timeout {timeout_s} {cmd}"
 
 
 def _q(p: str) -> str:
@@ -81,20 +93,18 @@ def push_files(target: RemoteTarget, local_root: Path, rel_files: list[str],
             for f in rel_files:
                 tar.add(local_root / f, arcname=f)
         remote_tar = f"/tmp/kda_push_{Path(tar_path).stem}.tar"
-        # 1) 推 tar 到 jump
+        # 1) 推 tar 到中转（jump 两跳模式=先到 jump；单跳模式=直推 host）
         r = subprocess.run([*_ssh_base(target), "cat > " + shlex.quote(remote_tar)],
                            input=Path(tar_path).read_bytes(), capture_output=True, timeout=timeout_s)
         if r.returncode != 0:
-            return {"ok": False, "error": f"jump 传输失败: {r.stderr.decode()[:200]}", "pushed": 0}
-        # 2) jump→host scp + 解包
-        inner = (f"timeout {timeout_s} ssh -o BatchMode=yes {target.host} "
-                 f"'mkdir -p {_q(remote_dir)} && cat > {_q(remote_tar)}' "
-                 f"< {shlex.quote(remote_tar)} && rm -f {shlex.quote(remote_tar)}")
+            return {"ok": False, "error": f"中转传输失败: {r.stderr.decode()[:200]}", "pushed": 0}
+        # 2) 中转→host 传输 + 解包
+        inner = _wrap_inner(target, f"mkdir -p {remote_dir} && cat > {remote_tar}", timeout_s) \
+            + f" < {shlex.quote(remote_tar)} && rm -f {shlex.quote(remote_tar)}"
         r = subprocess.run([*_ssh_base(target), inner], capture_output=True, text=True, timeout=timeout_s + 30)
         if r.returncode != 0:
             return {"ok": False, "error": f"host 传输失败: {r.stderr[:200]}", "pushed": 0}
-        inner2 = (f"timeout 60 ssh -o BatchMode=yes {target.host} "
-                  f"'cd {_q(remote_dir)} && tar xf {_q(remote_tar)} && rm -f {_q(remote_tar)}'")
+        inner2 = _wrap_inner(target, f"cd {remote_dir} && tar xf {remote_tar} && rm -f {remote_tar}", 60)
         r = subprocess.run([*_ssh_base(target), inner2], capture_output=True, text=True, timeout=120)
         return ({"ok": True, "pushed": len(rel_files)} if r.returncode == 0
                 else {"ok": False, "error": f"解包失败: {r.stderr[:200]}", "pushed": 0})
@@ -112,10 +122,10 @@ def pull_files(target: RemoteTarget, remote_paths: list[str], local_dir: Path,
     local_dir.mkdir(parents=True, exist_ok=True)
     remote_tar = "/tmp/kda_pull.tar"
     files_sh = " ".join(_q(p) for p in remote_paths)
-    inner = (f"timeout {timeout_s} ssh -o BatchMode=yes {target.host} "
-             f"'rm -f {remote_tar}; for f in {files_sh}; do "
-             f"tar rf {remote_tar} -C $(dirname \"$f\") $(basename \"$f\") 2>/dev/null; done; "
-             f"cat {remote_tar} 2>/dev/null; rm -f {remote_tar}'")
+    pull_cmd = (f"rm -f {remote_tar}; for f in {files_sh}; do "
+                f"tar rf {remote_tar} -C $(dirname \"$f\") $(basename \"$f\") 2>/dev/null; done; "
+                f"cat {remote_tar} 2>/dev/null; rm -f {remote_tar}")
+    inner = _wrap_inner(target, pull_cmd, timeout_s)
     r = subprocess.run([*_ssh_base(target), inner], capture_output=True, timeout=timeout_s + 60)
     if r.returncode != 0 or not r.stdout:
         return {"ok": False, "error": f"拉取失败: {r.stderr.decode(errors='replace')[:200]}", "pulled": 0}
@@ -203,10 +213,11 @@ def run_job(target: RemoteTarget, spec: JobSpec, mirror_root: str, runner_rel: s
         if not r["ok"]:
             return {"ok": False, "stage": "push", **r}
         # job.json 单独走 stdin 通道；顺带预建 results（docker -v 挂载源须先存在且归 ubuntu 所有）
+        job_path = payload + "/job.json"
         try:
             r2 = subprocess.run(
                 [*_ssh_base(target),
-                 f"timeout 120 ssh -o BatchMode=yes {target.host} 'mkdir -p {_q(payload)} {_q(results)} && cat > {_q(payload + "/job.json")}'"],
+                 _wrap_inner(target, f"mkdir -p {payload} {results} && cat > {job_path}", 120)],
                 input=job_local.read_bytes(), capture_output=True, timeout=150)
         except subprocess.TimeoutExpired:
             return {"ok": False, "stage": "job.json", "error": "link-timeout>150s", "pushed": 0}
@@ -214,8 +225,7 @@ def run_job(target: RemoteTarget, spec: JobSpec, mirror_root: str, runner_rel: s
             return {"ok": False, "stage": "job.json", "error": r2.stderr.decode()[:200]}
         # 2) 远端执行（同步大超时；Phase 1 换 nohup+轮询）
         exec_cmd = _build_exec_cmd(target, spec, payload, results, runner_rel)
-        inner = (f"timeout {spec.timeout_s} ssh -o BatchMode=yes {target.host} "
-                 f"{shlex.quote(exec_cmd)}")
+        inner = _wrap_inner(target, exec_cmd, spec.timeout_s)
         try:
             r3 = subprocess.run([*_ssh_base(target), inner], capture_output=True, text=True,
                                 timeout=spec.timeout_s + 120)

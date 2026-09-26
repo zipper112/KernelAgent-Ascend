@@ -49,10 +49,18 @@ class RemoteExecutor:
     def run(self, cmd: str, timeout_s: int = 120) -> dict:
         if self.target.workdir:
             cmd = f"cd {shlex.quote(self.target.workdir)} && {cmd}"
-        inner = (f"timeout {timeout_s} ssh -o BatchMode=yes "
-                 f"-o StrictHostKeyChecking=accept-new {self.target.host} {shlex.quote(cmd)}")
+        if self.target.jump:
+            # 两跳（本地 → jump → host）：命令包装 ssh <jump> "timeout T ssh <host> '<cmd>'"
+            inner = (f"timeout {timeout_s} ssh -o BatchMode=yes "
+                     f"-o StrictHostKeyChecking=accept-new {self.target.host} {shlex.quote(cmd)}")
+            argv = ["ssh", "-o", "BatchMode=yes", self.target.jump, inner]
+        else:
+            # 单跳直连（harness 已在 jump 上跑——jump 直达 yq-e15）
+            inner = f"timeout {timeout_s} {cmd}"
+            argv = ["ssh", "-o", "BatchMode=yes",
+                    "-o", "StrictHostKeyChecking=accept-new", self.target.host, inner]
         try:
-            proc = subprocess.run(["ssh", "-o", "BatchMode=yes", self.target.jump, inner],
+            proc = subprocess.run(argv,
                                   capture_output=True, text=True, timeout=timeout_s + 30)
         except subprocess.TimeoutExpired:
             return {"ok": False, "rc": 124, "stdout": "", "stderr": "", "error": f"link-timeout>{timeout_s + 30}s"}
