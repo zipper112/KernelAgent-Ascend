@@ -1,1 +1,2 @@
 {"candidate_id": "c001", "parent_id": null, "direction": "baseline", "hypothesis": "", "diff_ref": "solution/c001/", "evidence_refs": ["benchmark.csv#c001"], "status": "keep", "round": 0, "fallback": false, "stage": "verify"}
+{"candidate_id": "c001", "parent_id": null, "direction": "fused-single-launch rolling-window（寄存器滑窗 + SEQ 静态展开 + indices gather/scatter）", "hypothesis": "", "diff_ref": "solution/c001/", "evidence_refs": ["benchmark.csv#c001"], "status": "keep", "round": 4, "fallback": false, "stage": "verify"}

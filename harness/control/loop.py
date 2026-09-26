@@ -119,7 +119,9 @@ class AutonomousLoop:
     def _preflight(self, code: str, cid: str) -> str | None:
         """写后即检（零 NPU 成本）：语法编译 + CPU 桩冒烟。返回错误串或 None。
         远端 verify 一轮 ~10s 且占卡——低级错必须在本地拦截（k1-eager-norm 教训：
-        6 轮里 4 轮死于 list index/接口错，全可本地拦截）。"""
+        6 轮里 4 轮死于 list index/接口错，全可本地拦截）。
+        Triton DSL 特例：本地无 triton（只在远端容器），降级为语法检查 +
+        triton 桩（kernel 体不本地执行）——执行级验证交给远端 verify。"""
         cdir = self.task / "solution" / cid
         cdir.mkdir(parents=True, exist_ok=True)
         (cdir / "candidate.py").write_text(code, encoding="utf-8")
@@ -127,6 +129,7 @@ class AutonomousLoop:
             compile(code, f"{cid}.py", "exec")
         except SyntaxError as e:
             return f"SyntaxError: {e}"
+        has_triton = re.search(r"^\s*import triton|^\s*from triton", code, re.M)
         try:
             import types
             import torch
@@ -140,6 +143,19 @@ class AutonomousLoop:
                                                                    "elapsed_time": lambda s, o: 1.0}))
             torch.Tensor.npu = lambda self: self
             sys.modules["torch_npu"] = types.ModuleType("torch_npu")
+            if has_triton:
+                # triton 桩：jit 装饰器透传、language 属性宽容——只验 Python 层可导入性
+                tri = types.ModuleType("triton")
+                tri.jit = lambda fn=None, **kw: (fn if fn is not None else (lambda f: f))
+                lang = types.ModuleType("triton.language")
+                class _AnyConst:
+                    def __getattr__(self, n):
+                        return n
+                lang.constexpr = "constexpr"
+                lang.__getattr__ = lambda n: n        # tl.program_id/load/store 等
+                tri.language = lang
+                sys.modules["triton"] = tri
+                sys.modules["triton.language"] = lang
             try:
                 import importlib.util as _ilu
                 spec = _ilu.spec_from_file_location(cid, cdir / "candidate.py")
@@ -151,16 +167,17 @@ class AutonomousLoop:
                 import yaml as _y
                 wls = _y.safe_load((self.task / "bench" / "workloads.yaml")
                                    .read_text(encoding="utf-8"))["workloads"]
-                for wl in wls[:2]:
-                    axes = wl["axes"]
-                    x = torch.randn(axes["batch"], axes["seq"], axes["hidden"],
-                                    dtype=torch.float32).to(torch.bfloat16)
-                    out = mod.kernel([x])
-                    if out is None:
-                        return "kernel returned None"
-                    ref = refm.reference([x.clone()])
-                    if tuple(out.shape) != tuple(ref.shape):
-                        return f"shape {tuple(out.shape)} != ref {tuple(ref.shape)}"
+                if not has_triton:      # triton 桩下 kernel() 必假失败——语义验证交远端
+                    for wl in wls[:2]:
+                        axes = wl["axes"]
+                        x = torch.randn(axes["batch"], axes["seq"], axes["hidden"],
+                                        dtype=torch.float32).to(torch.bfloat16)
+                        out = mod.kernel([x])
+                        if out is None:
+                            return "kernel returned None"
+                        ref = refm.reference([x.clone()])
+                        if tuple(out.shape) != tuple(ref.shape):
+                            return f"shape {tuple(out.shape)} != ref {tuple(ref.shape)}"
             finally:
                 if saved_npu is not None:
                     torch.npu = saved_npu

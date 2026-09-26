@@ -2,15 +2,15 @@
  "schema": 1,
  "task": "k8-triton",
  "mode": "companion",
- "round": 3,
+ "round": 4,
  "best": null,
  "direction_fails": {
-  "parse-failed": 2
+  "parse-failed": 4
  },
  "stall_count": 0,
  "last_verdict": "REVISE",
  "pause": null,
  "terminal": null,
  "phase": "P1",
- "updated_at": "2026-09-26T19:21:04"
+ "updated_at": "2026-09-26T19:29:19"
 }
