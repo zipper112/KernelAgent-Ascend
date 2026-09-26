@@ -906,7 +906,7 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
                     br = {"mean_us": mean, "p50_us": p50, "p99_us": p99,
                           "speedup": speedup, "valid": valid}
                     # bench 落账（P0-1/P0-5：verdict=benched/invalid）
-                    self.ev.append_benchmark(cand["cid"], cand.get("parent"), "P1",
+                    self.ev.append_benchmark(cand["cid"], cand.get("parent"), "bench",
                                              "l0", mean, p50, p99, speedup,
                                              verdict="benched" if valid else "invalid",
                                              note="exec-auto")
@@ -979,7 +979,7 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
                         import math as _fm
                         fvalid = bool(fwls) and _fm.isfinite(fmean) and fmean > 0
                         if fvalid:
-                            self.ev.append_benchmark(cand["cid"], cand.get("parent"), "P1",
+                            self.ev.append_benchmark(cand["cid"], cand.get("parent"), "bench",
                                                      "full", fmean,
                                                      sorted(w.get("p50_us", 0) for w in fwls)[len(fwls) // 2],
                                                      max((w.get("p99_us", 0) for w in fwls), default=None),
