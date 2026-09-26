@@ -114,8 +114,9 @@ def run_verify(payload: Path, job: dict) -> dict:
         if chained:
             per_wl.append(_verify_chained(mod, ref_fn, inputs, wl["id"], tol, torch, steps))
             continue
-        # 参考输出先算（fp32 oracle 独立于候选，防候选原地改输入污染参考）
-        ref = ref_fn(list(inputs))
+        # 参考输出先算（fp32 oracle 独立于候选；克隆起跑——oracle 与候选互不污染输入，
+        # chained 语义下 reference 会原地演进 state，单步模式同样必须隔离）
+        ref = ref_fn([t.clone() for t in inputs])
         ref = ref[0] if isinstance(ref, (list, tuple)) else ref
         try:
             out = mod.kernel(list(inputs))

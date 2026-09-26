@@ -515,7 +515,7 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
         best_us = self._best_baseline_us()
         cur_us = (br or {}).get("mean_us") if (br or {}).get("valid", True) else None
         beat = None
-        if best_us is not None and cur_us:
+        if best_us and cur_us:
             beat = round((best_us - cur_us) / best_us * 100, 1)
         prompt = f"""你是 gate 评审（只读；证据驱动）。以下是完整评审契约与模板，逐条遵守：
 
