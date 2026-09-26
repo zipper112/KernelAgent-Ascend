@@ -1,55 +1,56 @@
-# candidate.py -- k1-allreduce-micro / direction: cube-gemv-offload
-# 纯 torch_npu 实现（无 triton，符合契约 dsl: pure-torch；禁 .item()/.cpu() 已遵守）
-#
-# 调研结论 -> 实现映射：
-# 1) w01 (8,2048,4096) fp16 = 128MiB，bandwidth-bound：单 pass 决定延迟。
-#    把 last-dim sum 改写为 (rows, K) @ (K, 1) 的 GEMV，走 CANN Cube matmul 管线
-#    （fp32 累加 + L2->L0 double-buffer 搬运），对齐 skill 中'带宽受限优先喂满搬运管线'原则。
-# 2) w02 (1,1,1048576) 仅 2MiB，latency-bound：任何多 kernel 方案（分块两段式）
-#    都会引入额外 launch 开销而变慢，故保留原生单 kernel torch.sum（tail-effect 规避）。
-# 3) ones 列向量按 (K, dtype, device) 缓存，消除每次调用的 fill kernel 启动。
-# 4) 精度：Cube fp32 累加后舍入 fp16，相对误差 <= 2^-11，满足 fp16 tolerance 0.004；
-#    0 行精确为 0，极值行累加次序确定（结果稳定）。
+# k1-allreduce-micro candidate: cube-path reduce_sum via x @ ones (revise of c003)
+# w01 (many rows): single MM  x2 @ ones(K,1)  -> Cube streams x once from HBM,
+#   fp32 accumulation, *1.0 exact (replaces the vector-reduce pass)
+# w02 (one long row): reshape row to (nchunk, CHUNK) and reduce two-level so
+#   rows*nchunk chunk-rows spread the 2**20-element stream over all ~40 AI
+#   cores, killing the single-core tail; tiny second-level mm over partials.
+# pure torch_npu; no .item()/.cpu(); bench untouched.
 
 import torch
 
-_ONES = {}  # (K, dtype, device) -> ones (K,1) 列向量缓存
+CHUNK = 4096      # chunk length for long-row split (divides 2**20 exactly)
+MIN_ROWS = 160    # ~4 rows/core on ~40 cores -> enough M-parallelism for direct MM
+
+_ONES = {}
 
 
-def _ones_col(k, dtype, device):
-    key = (int(k), dtype, str(device))
-    v = _ONES.get(key)
-    if v is None:
-        v = torch.ones((k, 1), dtype=dtype, device=device)
-        _ONES[key] = v
-    return v
+def _ones(k, dtype, device):
+    # ones vector is read-only in mm; cache to avoid re-alloc across bench iters
+    key = (k, dtype, device)
+    o = _ONES.get(key)
+    if o is None:
+        o = torch.ones((k, 1), dtype=dtype, device=device)
+        _ONES[key] = o
+    return o
+
+
+def _mm_reduce(x2, k, dtype, device):
+    # (rows, k) @ (k, 1) -> (rows,); Cube fp32 accumulation, *1.0 is exact
+    return torch.mm(x2, _ones(k, dtype, device)).squeeze(-1)
 
 
 def kernel(inputs):
     x = inputs[0]
+    out_shape = x.shape[:-1]
+    k = x.shape[-1]
+    dtype, device = x.dtype, x.device
 
-    if x.numel() == 0 or x.shape[-1] == 0:
-        return x.sum(dim=-1)
+    if x.numel() == 0:
+        return torch.zeros(out_shape, dtype=dtype, device=device)
 
-    n_last = int(x.shape[-1])
-    rows = x.numel() // n_last
-    dtype = x.dtype
+    rows = x.numel() // k
+    x2 = x.reshape(rows, k)  # view for contiguous bench inputs
 
-    # 多行、大 K、连续 fp16/bf16：走 Cube GEMV 单 pass 路径
-    use_gemv = (
-        dtype in (torch.float16, torch.bfloat16)
-        and rows >= 8
-        and n_last >= 256
-        and x.is_contiguous()
-    )
+    if rows >= MIN_ROWS or k <= CHUNK:
+        # enough independent rows (or short K): one cube-path MM, one HBM pass
+        return _mm_reduce(x2, k, dtype, device).reshape(out_shape)
 
-    if use_gemv:
-        x2 = x.reshape(rows, n_last)          # 连续张量：零拷贝 view
-        w = _ones_col(n_last, dtype, x.device)
-        y = torch.matmul(x2, w)               # (rows,1) fp32 累加，输出同 dtype
-        return y.reshape(x.shape[:-1])        # 零拷贝 view，shape/dtype 对齐 baseline
-
-    # 退化分支：单行/小张量/非连续/非半精度 -> 原生单 kernel reduce
-    if not x.is_contiguous():
-        x = x.contiguous()
-    return x.sum(dim=-1)
+    # long-row tail case (e.g. w02 1x1x1048576): split each row into chunk
+    # rows so rows*nchunk saturate all cores, then second-level mm reduce
+    nchunk = (k + CHUNK - 1) // CHUNK
+    pad = nchunk * CHUNK - k
+    if pad:
+        x2 = torch.nn.functional.pad(x2, (0, pad))  # zero-pad is exact for sums
+    x3 = x2.reshape(rows * nchunk, CHUNK)
+    part = _mm_reduce(x3, CHUNK, dtype, device).reshape(rows, nchunk)
+    return _mm_reduce(part, nchunk, dtype, device).reshape(out_shape)

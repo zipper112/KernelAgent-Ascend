@@ -285,8 +285,18 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
     # ---------- 主循环 ----------
 
     def run(self) -> int:
+        # 断点续跑：轮号接续 state.round（不重数——监督按轮分组依赖此）；反馈恢复上轮裁决
+        cur = self.st.require()
+        start_round = int(cur.get("round") or 0) + 1   # 续跑从下一轮起（防轮号碰撞污染监督分组）
+        if cur.get("terminal"):
+            self.st.update(terminal=None)     # 复活：续跑清终态
+        state = self.st
         feedback = ""
-        for round_ in range(1, self.max_rounds + 1):
+        last = self.ev.load_solutions()
+        if last:
+            feedback = f"{cur.get('last_verdict') or 'REVISE'}: 续跑——基于最新证据链继续（上一候选 {last[-1]['candidate_id']} dir={last[-1]['direction']}）"
+        for i in range(self.max_rounds):
+            round_ = start_round + i
             state = self.st.update(round=round_)
             print(f"[loop] round {round_} RESEARCH...", flush=True)
             research = self.research(round_, feedback)
@@ -300,7 +310,20 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
                 br = self.bench(round_, cand["cid"])
             print(f"[loop] round {round_} REVIEW...", flush=True)
             verdict = self.review(round_, cand["cid"], vr, br)
+            self.st.update(last_verdict=verdict)
             feedback = f"{verdict}: {cand.get('hypothesis', '')}"
+            # 熔断②接线（v0.2 协议）：REVISE/REJECT 连续 3 次同方向 → 强制换向注入
+            if verdict in ("REVISE", "REJECT"):
+                n = self.st.bump_direction_fail(str(cand.get("direction", "unknown"))[:40])
+                self.ev.log_audit("harness", "fuse-check", target=f"direction={cand.get('direction', '')[:40]}",
+                                  round_=round_, detail={"consecutive_fails": n})
+                if n >= 3:
+                    banned = cand.get("direction", "")
+                    feedback = (f"FUSE-DIRECTION: 方向「{banned}」已连续 {n} 次未达标，禁止再用。"
+                                f"必须换一个根本不同的优化方向（读 bench 证据找新瓶颈）。")
+                    self.st.bump_direction_fail(banned[:40])   # 保持计数；下一候选新方向自动另起
+                    self.ev.log_audit("harness", "fuse", target=f"direction={banned[:40]}",
+                                      round_=round_, detail={"reason": "3 consecutive fails", "action": "force-switch"})
             if verdict in ("COMPLETE", "STOP"):
                 self.st.update(terminal=verdict)
                 print(f"[loop] 终局：{verdict}", flush=True)

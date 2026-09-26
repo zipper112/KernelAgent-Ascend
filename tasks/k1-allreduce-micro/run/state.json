@@ -2,13 +2,16 @@
  "schema": 1,
  "task": "k1-allreduce-micro",
  "mode": "companion",
- "round": 1,
+ "round": 6,
  "best": null,
- "direction_fails": {},
+ "direction_fails": {
+  "matmul-offload-reduce": 1,
+  "cube-mm-two-level-reduce": 1
+ },
  "stall_count": 0,
- "last_verdict": null,
+ "last_verdict": "REVISE",
  "pause": null,
  "terminal": "MAXITER",
  "phase": "P1",
- "updated_at": "2026-09-26T15:40:18"
+ "updated_at": "2026-09-26T17:14:42"
 }

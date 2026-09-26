@@ -155,6 +155,26 @@ def cmd_budget(args) -> int:
     return _with_lock_and_state(task_root, run)
 
 
+def _device_contention(task_root: Path, ev, state: dict, device_id: int) -> dict | None:
+    """bench 前争用探针：目标卡上有他人进程 → audit 记 warning（数据可能污染，不阻塞——共用机现实）。"""
+    try:
+        import yaml as _y
+        cfg = _y.safe_load((task_root / "config.yaml").read_text(encoding="utf-8"))
+        rem = cfg.get("execution", {}).get("remote", {})
+        from infra.remote.executor import RemoteExecutor, RemoteTarget
+        tgt = RemoteTarget(jump=rem.get("jump", "jump"), host=rem.get("host", "yq-e15"))
+        r = RemoteExecutor(tgt).run(
+            f"npu-smi info | grep -A6 'NPU {device_id} ' | grep -c 'Process id' || true", timeout_s=30)
+        n = int((r.get("stdout") or "0").strip().splitlines()[-1] or 0)
+        info = {"device": device_id, "foreign_processes": n}
+        if n > 0:
+            ev.log_audit("harness", "contention-warning", round_=state.get("round"),
+                         detail={**info, "note": "目标卡有占用进程，bench 数据可能污染"})
+        return info
+    except Exception:   # noqa: BLE001 —— 探针失败不阻塞测量
+        return None
+
+
 def _run_remote_job(task_root: Path, state: dict, kind: str, candidate_id: str,
                     workload_set: str, ev: Evidence) -> dict:
     """verify/bench 公共：JobSpec 组装（含 payload 必备件）→ run_job → evidence 落盘。"""
@@ -205,7 +225,7 @@ def cmd_verify(args) -> int:
             return _out({"error": r.get("error", "job-failed"), "stage": r.get("stage")}, 2)
         res = r.get("result", {})
         passed = bool(res.get("passed"))
-        direction = _current_direction(task_root, state["round"])
+        direction = _current_direction(task_root, state["round"], ev=ev, candidate_id=args.candidate)
         if passed:
             ev.append_solution(args.candidate, parent_id=_parent_of(ev, args.candidate),
                                direction=direction or "baseline",
@@ -226,13 +246,28 @@ def cmd_verify(args) -> int:
     return _with_lock_and_state(task_root, run)
 
 
-def _current_direction(task_root: Path, round_: int) -> str | None:
+def _current_direction(task_root: Path, round_: int, ev: "Evidence | None" = None, candidate_id: str = "") -> str | None:
+    """direction 三源回退：①round-N-contract（陪伴模式 agent 手写）②该候选最近一次
+    candidate-write 的 audit detail（自主循环路径）③baseline。熔断②依赖此值。"""
     rc = task_root / "run" / f"round-{round_}-contract.md"
-    if not rc.exists():
-        return None
-    for line in rc.read_text(encoding="utf-8").splitlines():
-        if line.strip().startswith("direction:"):
-            return line.split("direction:", 1)[1].strip()
+    if rc.exists():
+        for line in rc.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("direction:"):
+                return line.split("direction:", 1)[1].strip()
+    if ev is not None and (task_root / "docs" / "audit.log").exists():
+        import json as _json
+        last = None
+        for line in (task_root / "docs" / "audit.log").read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                d = _json.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            if d.get("action") == "candidate-write" and d.get("detail", {}).get("direction"):
+                if not candidate_id or d.get("target") == candidate_id:
+                    last = d["detail"]["direction"]
+        return last
     return None
 
 
@@ -248,6 +283,10 @@ def cmd_bench(args) -> int:
     task_root = _task_root(args.task)
 
     def run(ev, lock, st, state):
+        import yaml as _y
+        _rem = _y.safe_load((task_root / "config.yaml").read_text(encoding="utf-8")) \
+                  .get("execution", {}).get("remote", {})
+        contention = _device_contention(task_root, ev, state, _rem.get("device_id", 0))
         r = _run_remote_job(task_root, state, "bench", args.candidate, args.workload_set, ev)
         if not r.get("ok"):
             ev.log_audit("harness", "kda bench", target=args.candidate,
@@ -260,13 +299,15 @@ def cmd_bench(args) -> int:
         p99 = max((w.get("p99_us", 0) for w in wls), default=None)
         speedup = (sum(w.get("speedup_vs_ref", 0) for w in wls) / len(wls)
                    if wls and "speedup_vs_ref" in wls[0] else None)
-        ev.append_benchmark(args.candidate, _parent_of(ev, args.candidate), state["phase"],
+        ev.append_benchmark(args.candidate, None, state["phase"],
                             args.workload_set, mean, p50, p99, speedup, verdict="keep",
-                            note="bench-auto")
+                            note="bench-auto" + (" [contention!]" if contention and contention.get("foreign_processes") else ""))
         ev.log_audit("agent", "kda bench", target=args.candidate, round_=state["round"],
-                     detail={"mean_us": round(mean, 1) if mean else None})
+                     detail={"mean_us": round(mean, 1) if mean else None,
+                             **({"contention": contention} if contention else {})})
         return _out({"ok": True, "mean_us": mean, "p50_us": p50, "p99_us": p99,
-                     "speedup": speedup, "workloads": wls}, 0)
+                     "speedup": speedup, "workloads": wls,
+                     **({"contention": contention} if contention else {})}, 0)
     return _with_lock_and_state(task_root, run)
 
 
