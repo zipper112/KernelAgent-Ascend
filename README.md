@@ -58,11 +58,61 @@ python tools/check_env.py --full
 kda new-task tasks/my-op   # 从 _template 生成七件套
 ```
 
-当前状态：**v0.0-scaffold**（骨架+协议规格+知识模板已就位；harness 代码 Phase 1 实现）。路线图见 [CHANGELOG.md](CHANGELOG.md) 与各 [ADR](docs/adr/)。
+当前状态：**v0.0-scaffold**（骨架+协议规格+知识模板已就位；harness 代码 Phase 1 实现）。路线图见 [CHANGELOG.md](CHANGELOG.md) 与各 [ADR](docs/design/)。
+
+## 重资产与部署（新机器必读）
+
+### git 内资产（clone 即得）
+
+| 资产 | 体积 | 说明 |
+|---|---|---|
+| `knowledge/` | ~50M | 全部知识资产（prompts/router/skills/lessons，1837 文件）——三源合流的落地物 |
+| `third_party/akg/` | ~5M | KernelVerifier 代码子树（钉版 5aa15f3，Apache-2.0） |
+| `knowledge/router/production-index.yaml` | 160K | 生产代码索引（cann-ops 目录级索引；router `--production` 查询只依赖它，**无需下载 474M 原始树**） |
+
+### git 外重资产（三项，缺一按下方方式补）
+
+**1. `third_party/cann-ops/`（~474M，CANN 算子仓源码层）**
+
+- 来源：gitcode.com `cann/` 组织下十个算子仓（ops-math/ops-nn/ops-transformer 等；浅克隆 + 剥 tests 后组装）
+- 重建：`python tools/sync_assets.py --bootstrap-cann-ops`（gitcode 国内直连，无需代理，数分钟）
+- 用途：writer 需要深读某算子实现源码时的素材层（research 的 production 层索引已在 git；本树只在读文件本体时需要）
+- 放置：`third_party/cann-ops/<repo>/<family>/...`（脚本自动；禁止手动改动后被 `--check` 扫出漂移）
+
+**2. `agent-config/local-secrets.yaml`（GLM API key，永不入 git）**
+
+- 格式（`chmod 600`）：
+  ```yaml
+  glm:
+    api_key: "<your-key>"
+  ```
+- 或环境变量 `GLM_API_KEY`（优先级：env > yaml；都缺则 harness 启动即报错，不带默认 key）
+
+**3. Python 环境**
+
+- 主阵地（jump）用 conda：`conda create -n ka python=3.11 && conda activate ka && pip install pytest pyyaml`
+- pip 报 "No matching distribution" 时多为机器残留内部镜像配置：`PIP_CONFIG_FILE=/dev/null`，或加清华镜像 `-i https://pypi.tuna.tsinghua.edu.cn/simple`，或走代理 `--proxy http://127.0.0.1:18090`
+- torch/torch_npu 只在远端 e15 容器内需要（本地测试缺 torch 自动 skip，不阻塞）
+
+### 一键部署清单（以 jump 为例）
+
+```bash
+git clone git@github.com:zipper112/KernelAgent-Ascend.git /data01/mahaolong/KAgent
+cd /data01/mahaolong/KAgent && conda activate ka
+python tools/sync_assets.py --bootstrap-cann-ops   # 重建 474M 资产层 + 索引
+# 放入密钥（chmod 600）
+python -m pytest tests/ -q                          # 期望全绿（torch 用例自动 skip）
+python -m harness.cli version                       # 冒烟
+```
+
+远端 NPU 访问（ADR-013 操作上下文注入模式）：确保本机 `ssh yq-e15` BatchMode 免密可达、
+目标卡空闲（`npu-smi info`）、任务 `config.yaml` 的 `execution.remote` 段填好 host/device_id/docker_image。
+harness 会把访问手册注入 writer prompt，LLM 依据 canonical 模板自主执行（详见
+`docs/design/ADR-013-操作上下文注入替代远程执行层.md`）。
 
 ## 维护者指南
 
-- 设计决策看 `docs/adr/`（为什么这么做）；接口规格看 `docs/design/interaction-protocol.md`（怎么对接）；
+- 设计决策看 `docs/design/`（ADR，为什么这么做）；接口规格看 `docs/design/interaction-protocol.md`（怎么对接）；
 - 上游更新（akg/humanize/skill）流程看 `docs/maintenance.md` 与 `deps/upstream.md`；
 - commit 前缀：`feat/fix/docs/deps/knowledge/tests`；
 - 每阶段验收打 tag：v0.1-mvp → v0.2-diagnosis → v0.3-knowledge → v1.0。
