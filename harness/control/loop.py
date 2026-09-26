@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from harness.core.evidence import Evidence  # noqa: E402
-from harness.core.state import TaskState  # noqa: E402
+from harness.core.state import TaskState, is_pseudo_direction  # noqa: E402
 from harness.models import ModelsClient, QuotaError  # noqa: E402
 
 QUERY = REPO_ROOT / "knowledge" / "router" / "query.py"
@@ -48,6 +48,7 @@ class AutonomousLoop:
         self.models = ModelsClient(self.task)
         from harness.control.memory import IterationMemory
         self.mem = IterationMemory(self.task)   # 三源记忆层（Humanize 存续/KDA 证据/比赛经验）
+        self._last_review_text = ""             # P0-7：评审原文属性预置（异常路径不 AttributeError）
         self.max_rounds = max_rounds
         self.budget = self._load_budget()
 
@@ -214,16 +215,13 @@ class AutonomousLoop:
 
     def write_candidate(self, round_: int, research: dict, feedback: str) -> dict:
         prev = self._candidates_summary()
-        cid = f"c{len(self.ev.load_solutions()) + 1:03d}"
-        # 同向 refine 复用 id（协议候选 id 规则）；**换向必须新开 id**——否则新方向
-        # 覆盖旧目录，最优版本丢失（K8-Triton 实战：606us 版被后续换向轮覆盖）。
-        if feedback.startswith("REVISE:"):
-            sols = self.ev.load_solutions()
-            last_dir = str(sols[-1].get("direction", ""))[:40] if sols else ""
-            # feedback 里带方向名（writer 拿到的 FUSE/REVISE 文本含旧方向）时对比；
-            # 无法判断时保守开新 id（宁可多目录不丢版本）
-            if last_dir and last_dir in feedback:
-                cid = sols[-1]["candidate_id"]
+        # P0-2：parent 链计算。同向 refine（REVISE 且方向承接上轮）→ 上轮 cid 继承
+        # 上下文但**不**复用 id（id 复用会覆盖最优版本——K8 实战教训）；换向 → 全局最优 keep；
+        # 首个候选 → None（根）。
+        sols = self.ev.load_solutions()
+        latest = self.ev.latest_status_map()
+        parent_cid = self._parent_for(sols, latest, feedback)
+        cid = f"c{len(latest) + 1:03d}"
         skills_txt = "\n\n".join(
             f"### skill {s['id']}（{s['skill']}）\n{s['excerpt']}" for s in research["skills"]) or "（router 未命中）"
         import yaml as _y
@@ -292,7 +290,8 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
             self.ev.log_audit("harness", "write-parse-fail", target=cid, round_=round_,
                               detail={"raw_head": (raw if d is None else raw2)[:150]})
             return {"cid": cid, "direction": "parse-failed", "hypothesis":
-                    "writer 输出无法解析（截断/畸形）——需要更紧凑的代码输出", "code": "", "parse_failed": True}
+                    "writer 输出无法解析（截断/畸形）——需要更紧凑的代码输出", "code": "",
+                    "parse_failed": True, "parent": parent_cid}
         # 写后即检（本地零 NPU 成本拦截低级错；失败带错误回炉重写一次）
         err = self._preflight(d["code"], cid)
         if err:
@@ -323,8 +322,9 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         self.ev.log_audit("agent", "candidate-write", target=cid, round_=round_,
                           detail={"direction": d.get("direction"),
                                   "knowledge_used": d.get("knowledge_used", []),
-                                  "hypothesis": str(d.get("hypothesis"))[:150]})
-        return {"cid": cid, **d}
+                                  "hypothesis": str(d.get("hypothesis"))[:150],
+                                  "parent": parent_cid})
+        return {"cid": cid, "parent": parent_cid, **d}
 
     @staticmethod
     def _parse_candidate(raw: str) -> dict | None:
@@ -392,26 +392,40 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
                 fields["code"] = code.encode().decode("unicode_escape", errors="replace")
             return fields
         return None
-        cdir = self.task / "solution" / cid
-        cdir.mkdir(parents=True, exist_ok=True)
-        (cdir / "candidate.py").write_text(d["code"], encoding="utf-8")
-        self.ev.log_audit("agent", "candidate-write", target=cid, round_=round_,
-                          detail={"direction": d.get("direction"),
-                                  "knowledge_used": d.get("knowledge_used", []),
-                                  "hypothesis": str(d.get("hypothesis"))[:150]})
-        return {"cid": cid, **d}
+
+    @staticmethod
+    def _parent_for(sols: list[dict], latest: dict[str, dict], feedback: str) -> str | None:
+        """P0-2 DAG parent：REVISE 反馈含上轮方向名（同向 refine）→ 上轮 cid；
+        其余（换向/首轮/FUSE）→ 全局最优 keep cid；无 keep → None。"""
+        if not sols:
+            return None
+        last = sols[-1]
+        last_dir = str(last.get("direction", ""))[:40]
+        if (feedback.startswith("REVISE:") or feedback.startswith("REJECT:")) \
+                and last_dir and last_dir in feedback:
+            return last["candidate_id"]
+        keeps = [r for r in latest.values() if r.get("status") == "keep"]
+        if keeps:
+            return max(keeps, key=lambda r: int(r.get("round") or 0))["candidate_id"]
+        return None
 
     def _memory_block(self) -> str:
-        """writer prompt 的记忆段：上轮档案全文 + 证据账本 + 经验库（三源内化）。"""
+        """writer prompt 的记忆段：上轮档案全文 + 证据账本 + 经验库（三源内化）。
+        P0-6：评审原文截断自适应——min(6000, 上下文余量/6)，至少 2500 字
+        （完整保留裁决+逐条 issue；此前硬 2000 截断会切掉修复线索）。"""
         lr = self.mem.last_round()
         parts = []
+        budget = int(self.models._defaults.get("context_window", 250000))
+        soft = int(budget * 0.8)
+        used = self._context_used_tokens()
+        cap = max(2500, min(6000, (soft - used) // 6))
         if lr:
             r, rec = lr
             parts.append(f"### 上轮（round {r}）完整档案\n"
                          f"- direction: {rec.get('direction')}\n"
                          f"- verify: {json.dumps(rec.get('verify', {}), ensure_ascii=False)[:300]}\n"
                          f"- bench: {json.dumps(rec.get('bench', {}), ensure_ascii=False)[:200]}\n"
-                         f"- 评审原文:\n{str(rec.get('review_text', ''))[:2000]}")
+                         f"- 评审原文:\n{str(rec.get('review_text', ''))[:cap]}")
             code = str(rec.get('code', ''))
             if code:
                 parts.append(f"- 上轮代码（可增量修改，勿从零重写）:\n```\n{code[:4000]}\n```")
@@ -454,45 +468,61 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
     # ---------- 阶段 5：REVIEW ----------
 
     def _best_baseline_us(self) -> float | None:
-        """reviewer 参照系：历史最优 mean_us（含 c001 基线——keep 的唯一合法参照）。"""
+        """reviewer 参照系：历史最优 mean_us（含 c001 基线——keep 的唯一合法参照）。
+        P0-5：只认 phase=bench、verdict∈{benched,keep}、mean_us>0 且有限的行——
+        invalid 行（mean=0/NaN）与 verify 阶段行不入参照系。"""
         import csv
+        import math
         p = self.task / "docs" / "benchmark.csv"
         if not p.exists():
             return None
         best = None
         for row in csv.DictReader(p.read_text(encoding="utf-8").splitlines()):
+            if row.get("phase") != "bench":
+                continue
+            if row.get("verdict") not in ("benched", "keep"):
+                continue
             try:
                 v = float(row["mean_us"])
             except (ValueError, KeyError):
+                continue
+            if not math.isfinite(v) or v <= 0:
                 continue
             best = v if best is None else min(best, v)
         return best
 
     def review(self, round_: int, cid: str, vr: dict, br: dict | None) -> str:
+        """P0-8：注入完整 gate 评审契约（弃 1500 字符截断——简化契约=评审质量塌陷源）。
+        契约要点内联在 prompt 头部；模板正文全文注入。"""
         template = (REPO_ROOT / "knowledge" / "prompts" / "gate-review.md").read_text(encoding="utf-8")
         best_us = self._best_baseline_us()
-        cur_us = (br or {}).get("mean_us")
+        cur_us = (br or {}).get("mean_us") if (br or {}).get("valid", True) else None
         beat = None
         if best_us is not None and cur_us:
             beat = round((best_us - cur_us) / best_us * 100, 1)
-        prompt = f"""你是 gate 评审（只读；证据驱动）。简化轮评审（模板节选）：
-{template[:1500]}
+        prompt = f"""你是 gate 评审（只读；证据驱动）。以下是完整评审契约与模板，逐条遵守：
 
-## 本轮证据
-- verify：passed={vr.get('passed')} err_ratio={[w.get('err_ratio') for w in vr.get('workloads', [])]}
-- bench：{json.dumps({k: br.get(k) for k in ('mean_us', 'p50_us', 'p99_us', 'speedup')}, ensure_ascii=False) if br else '未跑（verify 未过）'}
+{template}
+
+## 本轮证据（你的裁决只认这些，不认 agent 声明）
+- 候选：{cid}（direction 见 solutions.jsonl 本轮行）
+- verify：passed={vr.get('passed')} err_ratio={[w.get('err_ratio') for w in vr.get('workloads', [])][:5]}
+- bench：{json.dumps({k: br.get(k) for k in ('mean_us', 'p50_us', 'p99_us', 'speedup', 'valid')}, ensure_ascii=False) if br else '未跑（verify 未过）'}
 - 候选历史：{self._candidates_summary()}
 - **历史最优 mean_us = {best_us}**（含基线；本轮 {round(cur_us, 1) if cur_us else 'N/A'}，
   {'快 ' + str(beat) + '%' if beat and beat > 0 else ('慢 ' + str(abs(beat)) + '%' if beat else '无可比')}）
 
-## 裁决规则（按数据不按声明）
+## 裁决规则（按数据不按声明；机器漂移检测会复核你的裁决）
 - verify 未过 → REVISE（附一句修复方向）或 REJECT（方向死刑）
-- verify 过且 bench 出数：
-  - **mean_us 优于历史最优** → keep（这是唯一刷新纪录的合法判据；speedup 字段是相对
-    运行内 oracle 的比值，不可作为 keep 依据——以 mean_us 为准）
+- verify 过且 bench 出数（valid）：
+  - **mean_us 优于历史最优** → COMPLETE（本轮即新纪录；这是唯一刷新纪录的合法判据；
+    speedup 字段是相对运行内 oracle 的比值，不可作为判据——以 mean_us 为准）
   - 未超历史最优 → REVISE（写明差多少 μs）
-- 末行必须是四选一：COMPLETE / REVISE / REJECT / STOP
-输出：一段简短评审 + 末行裁决（恰好一行，在最后一行）。"""
+  - bench 无效（valid=false）→ REVISE（指出测量无效原因）
+- STOP 为终局建议：必须同时给出 ①最近 bench 证据表 ②具名瓶颈 ③已试方向清单及各自失败
+  证据，三要素缺一不可——否则降级为 REVISE。
+- 末行必须是四选一：COMPLETE / REVISE / REJECT / STOP（恰好一行，在最后一行）。
+输出结构：简短逐项评审（含 MAINLINE_GAPS/BLOCKING/QUEUED 三车道）+ 末行裁决。"""
         raw = self.models.chat("reviewer", [{"role": "user", "content": prompt}],
                                temperature=0.1, purpose=f"round{round_}-review")
         self._last_review_text = raw          # 记忆层存档用（评审原文进下轮 prompt）
@@ -507,6 +537,56 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
 
     # ---------- 主循环 ----------
 
+    def _write_round_contract(self, round_: int, cand: dict, br: dict | None) -> None:
+        """P0-6：WRITE 成功后由 harness 生成本轮契约（Humanize round-contract 机制）。
+        direction/hypothesis 取自 writer 自述；success_criteria 锚定当前历史最优——
+        research 方向读取与 cli._current_direction 的第一源。"""
+        best = self._best_baseline_us()
+        target = f"mean_us < {best:.1f}（当前历史最优，dev 集）" if best else "首个可测基线（verify 过 + bench 出数）"
+        # direction 行必须裸写（cli._current_direction 按 "direction:" 前缀解析）
+        text = (f"# round-{round_} 契约（harness 自动生成）\n\n"
+                f"direction: {cand.get('direction')}\n"
+                f"hypothesis: {cand.get('hypothesis')}\n"
+                f"candidate: {cand.get('cid')}\n"
+                f"parent: {cand.get('parent') or '（根）'}\n"
+                f"success_criteria: {target}\n"
+                f"blocking: 上轮评审要点见 run/memory/round-{max(round_ - 1, 0)}.json\n")
+        (self.task / "run" / f"round-{round_}-contract.md").write_text(text, encoding="utf-8")
+
+    def _drift_check(self, round_: int, verdict: str, br: dict | None) -> str:
+        """P0-3：机器漂移判定（Humanize ADVANCED/STALLED/REGRESSED 的数据版）。
+        判据全部来自 benchmark.csv——不采信 LLM 自评，防 reward hacking：
+        - ADVANCED：本轮 mean_us 创新最优（含首轮基线）
+        - REGRESSED：有 bench 且 mean 劣于当前历史最优（本轮行计入前的最优）>5%
+        - STALLED：其余（无 bench / 未超最优但差距 ≤5% / verify 挂）
+        返回 progress 并写 stall_count；≥2 REPLAN 注入、≥3 stop-drift 终态由调用方处理。"""
+        import csv
+        p = self.task / "docs" / "benchmark.csv"
+        cur = (br or {}).get("mean_us") if (br or {}).get("valid", (br is not None)) else None
+        hist_best = None
+        if p.exists():
+            for row in csv.DictReader(p.read_text(encoding="utf-8").splitlines()):
+                if row.get("phase") != "bench" or row.get("verdict") not in ("benched", "keep"):
+                    continue
+                try:
+                    v = float(row["mean_us"])
+                except (ValueError, KeyError):
+                    continue
+                if v > 0 and (hist_best is None or v < hist_best):
+                    hist_best = v
+        if cur and cur > 0 and (hist_best is None or cur < hist_best):
+            progress = "ADVANCED"
+        elif cur and hist_best and cur > hist_best * 1.05:
+            progress = "REGRESSED"
+        else:
+            progress = "STALLED"
+        stall = self.st.bump_stall(progress)
+        self.ev.log_audit("harness", "drift-check", target=f"round-{round_}", round_=round_,
+                          detail={"progress": progress, "stall_count": stall,
+                                  "cur_us": cur, "hist_best_us": hist_best,
+                                  "review_verdict": verdict})
+        return progress
+
     def run(self) -> int:
         # 断点续跑：轮号接续 state.round（不重数——监督按轮分组依赖此）；反馈恢复上轮裁决
         cur = self.st.require()
@@ -518,69 +598,133 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         last = self.ev.load_solutions()
         if last:
             feedback = f"{cur.get('last_verdict') or 'REVISE'}: 续跑——基于最新证据链继续（上一候选 {last[-1]['candidate_id']} dir={last[-1]['direction']}）"
-        for i in range(self.max_rounds):
-            round_ = start_round + i
-            state = self.st.update(round=round_)
-            print(f"[loop] round {round_} RESEARCH...", flush=True)
-            research = self.research(round_, feedback)
-            print(f"[loop] round {round_} WRITE...", flush=True)
-            cand = self.write_candidate(round_, research, feedback)
-            print(f"[loop] round {round_} VERIFY {cand['cid']}...", flush=True)
-            if cand.get("parse_failed"):
-                vr = {"passed": False, "workloads": [], "error": "write-parse-failed"}
-                self.ev.log_audit("harness", "verify-step", target=cand["cid"], round_=round_,
-                                  detail={"rc": 2, "passed": False, "skipped": "parse-failed"})
-            else:
-                vr = self.verify(round_, cand["cid"])
-            br = None
-            if vr.get("passed"):
-                print(f"[loop] round {round_} BENCH...", flush=True)
-                br = self.bench(round_, cand["cid"])
-            print(f"[loop] round {round_} REVIEW...", flush=True)
-            verdict = self.review(round_, cand["cid"], vr, br)
-            self.st.update(last_verdict=verdict)
-            feedback = f"{verdict}: {cand.get('hypothesis', '')}"
-            # 记忆层轮末存档（Humanize 存续：下轮注入全文而非摘要）
-            self.mem.save_round(round_, {
-                "direction": cand.get("direction"), "hypothesis": cand.get("hypothesis"),
-                "verify": {"passed": vr.get("passed"),
-                           "err_ratio": [w.get("err_ratio") for w in vr.get("workloads", [])][:3],
-                           "error": str((vr.get("workloads") or [{}])[0].get("error", ""))[:150]},
-                "bench": {k: (br or {}).get(k) for k in ("mean_us", "p50_us", "p99_us", "speedup")},
-                "review_text": self._last_review_text,
-                "code": cand.get("code", ""),
-            })
-            # BitLesson 沉淀（比赛经验：每轮一条，失败教训优先）
-            if verdict == "keep" and br and br.get("mean_us"):
-                self.mem.add_lesson(round_, "win",
-                                    f"{cand.get('direction')} mean={br['mean_us']:.0f}us 刷新最优——该方向有效")
-            elif not vr.get("passed"):
-                err = str((vr.get("workloads") or [{}])[0].get("error", ""))[:120]
-                self.mem.add_lesson(round_, "fail",
-                                    f"{cand.get('direction')} verify 挂: {err or '数值超差'}——避免同类接口/边界错误")
-            # 熔断②接线（v0.2 协议）：REVISE/REJECT 连续 3 次同方向 → 强制换向注入
-            if verdict in ("REVISE", "REJECT"):
-                n = self.st.bump_direction_fail(str(cand.get("direction", "unknown"))[:40])
-                self.ev.log_audit("harness", "fuse-check", target=f"direction={cand.get('direction', '')[:40]}",
-                                  round_=round_, detail={"consecutive_fails": n})
-                if n >= 3:
-                    banned = cand.get("direction", "")
-                    feedback = (f"FUSE-DIRECTION: 方向「{banned}」已连续 {n} 次未达标，禁止再用。"
-                                f"必须换一个根本不同的优化方向（读 bench 证据找新瓶颈）。")
-                    self.st.bump_direction_fail(banned[:40])   # 保持计数；下一候选新方向自动另起
-                    self.ev.log_audit("harness", "fuse", target=f"direction={banned[:40]}",
-                                      round_=round_, detail={"reason": "3 consecutive fails", "action": "force-switch"})
-            if verdict in ("COMPLETE", "STOP"):
-                self.st.update(terminal=verdict)
-                print(f"[loop] 终局：{verdict}", flush=True)
-                return 0
-            if verdict == "keep":
-                subprocess.run(["git", "add", "-A"], cwd=REPO_ROOT, capture_output=True)
-                subprocess.run(["git", "commit", "-m",
-                                f"keep({cand['cid']}): auto {cand.get('direction')}"],
-                               cwd=REPO_ROOT, capture_output=True)
-        self.st.update(terminal="MAXITER")
-        return 0
+        try:
+            for i in range(self.max_rounds):
+                round_ = start_round + i
+                state = self.st.update(round=round_)
+                print(f"[loop] round {round_} RESEARCH...", flush=True)
+                research = self.research(round_, feedback)
+                print(f"[loop] round {round_} WRITE...", flush=True)
+                cand = self.write_candidate(round_, research, feedback)
+                # P0-6：契约落盘（WRITE 成功即锚定方向——research/熔断/监督的第一源）
+                if not cand.get("parse_failed"):
+                    self._write_round_contract(round_, cand, None)
+                    self.st.reset_writer_fails()
+                else:
+                    # P0-4：writer 失败独立计数（模型/协议问题，不烧方向熔断）
+                    wf = self.st.bump_writer_fail()
+                    self.ev.log_audit("harness", "writer-fail", target=cand["cid"],
+                                      round_=round_, detail={"consecutive": wf})
+                    if wf >= 3:
+                        self.st.update(terminal="pause",
+                                       pause={"reason": "writer-fails-3",
+                                              "detail": "连续 3 轮 writer 输出无法解析——"
+                                                        "模型/协议问题，需人工检查 max_tokens/协议格式"})
+                        self.ev.log_audit("harness", "pause", round_=round_,
+                                          detail={"reason": "writer-fails-3"})
+                        print("[loop] 终局：pause（writer 连续失败）", flush=True)
+                        return 0
+                print(f"[loop] round {round_} VERIFY {cand['cid']}...", flush=True)
+                if cand.get("parse_failed"):
+                    vr = {"passed": False, "workloads": [], "error": "write-parse-failed"}
+                    self.ev.log_audit("harness", "verify-step", target=cand["cid"], round_=round_,
+                                      detail={"rc": 2, "passed": False, "skipped": "parse-failed"})
+                else:
+                    vr = self.verify(round_, cand["cid"])
+                br = None
+                if vr.get("passed"):
+                    print(f"[loop] round {round_} BENCH...", flush=True)
+                    br = self.bench(round_, cand["cid"])
+                print(f"[loop] round {round_} REVIEW...", flush=True)
+                verdict = self.review(round_, cand["cid"], vr, br)
+                self.st.update(last_verdict=verdict)
+                # P0-1：评审终判回写账本（verdict 不再恒 keep——账本=真实状态）
+                if not cand.get("parse_failed"):
+                    v_final = "keep" if verdict == "COMPLETE" else verdict.lower()
+                    self.ev.record_review(cand["cid"], v_final,
+                                          note=(self._last_review_text or "")[-200:],
+                                          round_=round_)
+                    self.ev.log_audit("gate", "review-verdict", target=cand["cid"],
+                                      round_=round_, detail={"verdict": v_final})
+                feedback = f"{verdict}: {cand.get('hypothesis', '')}"
+                # 记忆层轮末存档（Humanize 存续：下轮注入全文而非摘要）
+                self.mem.save_round(round_, {
+                    "direction": cand.get("direction"), "hypothesis": cand.get("hypothesis"),
+                    "verify": {"passed": vr.get("passed"),
+                               "err_ratio": [w.get("err_ratio") for w in vr.get("workloads", [])][:3],
+                               "error": str((vr.get("workloads") or [{}])[0].get("error", ""))[:150]},
+                    "bench": {k: (br or {}).get(k) for k in ("mean_us", "p50_us", "p99_us", "speedup")},
+                    "review_text": self._last_review_text,
+                    "code": cand.get("code", ""),
+                })
+                # BitLesson 沉淀（比赛经验：每轮一条，失败教训优先）
+                if verdict == "COMPLETE" and br and br.get("mean_us"):
+                    self.mem.add_lesson(round_, "win",
+                                        f"{cand.get('direction')} mean={br['mean_us']:.0f}us 刷新最优——该方向有效")
+                elif not vr.get("passed"):
+                    err = str((vr.get("workloads") or [{}])[0].get("error", ""))[:120]
+                    self.mem.add_lesson(round_, "fail",
+                                        f"{cand.get('direction')} verify 挂: {err or '数值超差'}——避免同类接口/边界错误")
+                # 熔断②接线（v0.2 协议）：REVISE/REJECT 连续 3 次同方向 → 强制换向注入
+                # P0-4：伪方向不计数（parse-failed 走 writer_fails 通道）
+                if verdict in ("REVISE", "REJECT") and not is_pseudo_direction(cand.get("direction")):
+                    n = self.st.bump_direction_fail(str(cand.get("direction", ""))[:40])
+                    self.ev.log_audit("harness", "fuse-check", target=f"direction={cand.get('direction', '')[:40]}",
+                                      round_=round_, detail={"consecutive_fails": n})
+                    if n >= 3:
+                        banned = cand.get("direction", "")
+                        feedback = (f"FUSE-DIRECTION: 方向「{banned}」已连续 {n} 次未达标，禁止再用。"
+                                    f"必须换一个根本不同的优化方向（读 bench 证据找新瓶颈）。")
+                        self.ev.log_audit("harness", "fuse", target=f"direction={banned[:40]}",
+                                          round_=round_, detail={"reason": "3 consecutive fails", "action": "force-switch"})
+                # P0-3：机器漂移判定（每轮 REVIEW 后；不采信 LLM 自评）
+                progress = self._drift_check(round_, verdict, br)
+                if progress != "ADVANCED" and int(self.st.require().get("stall_count", 0)) >= 3:
+                    self.st.update(terminal="stop-drift")
+                    self._write_drift_verdict(round_)
+                    print("[loop] 终局：stop-drift（连续 3 轮无进展）", flush=True)
+                    return 0
+                if int(self.st.require().get("stall_count", 0)) == 2:
+                    feedback = ("REPLAN: 最近两轮无实质进展（机器漂移判定 STALLED/REGRESSED）。"
+                                "读 bench 证据账本找新瓶颈，换根本不同的方向；"
+                                "重复同方向的微调不会再有收益。") + ("\n" + feedback if feedback else "")
+                    self.ev.log_audit("harness", "replan-inject", round_=round_,
+                                      detail={"trigger": "stall_count=2"})
+                if verdict in ("COMPLETE", "STOP"):
+                    self.st.update(terminal=verdict)
+                    print(f"[loop] 终局：{verdict}", flush=True)
+                    return 0
+                if verdict == "COMPLETE":
+                    subprocess.run(["git", "add", "-A"], cwd=REPO_ROOT, capture_output=True)
+                    subprocess.run(["git", "commit", "-m",
+                                    f"keep({cand['cid']}): auto {cand.get('direction')}"],
+                                   cwd=REPO_ROOT, capture_output=True)
+            self.st.update(terminal="MAXITER")
+            return 0
+        except QuotaError as e:
+            # P0-7：任何退出路径都有终态（QuotaError→pause 可续）
+            self.st.update(terminal="pause", pause={"reason": "quota", "detail": str(e)[:500]})
+            self.ev.log_audit("harness", "pause", round_=state.get("round"),
+                              detail={"reason": "quota"})
+            print(f"[loop] 配额暂停（状态已保存，续跑自动接 round {state.get('round')}）：{e}", flush=True)
+            return 0
+        except (KeyboardInterrupt, Exception) as e:  # noqa: BLE001
+            # P0-7：异常路径写终态 error + 尾部诊断——不再悬空（k1-eager-norm 教训）
+            self.st.update(terminal="error", pause={"reason": type(e).__name__,
+                                                    "detail": str(e)[:500]})
+            self.ev.log_audit("harness", "loop-error", round_=state.get("round"),
+                              detail={"type": type(e).__name__, "msg": str(e)[:300]})
+            raise
+
+    def _write_drift_verdict(self, round_: int) -> None:
+        """P0-3：stop-drift 终态的证据固化（bench 表 + 已试方向——人工复盘入口）。"""
+        rows = self.mem.evidence_digest(self._best_baseline_us())
+        tried = "\n".join(f"- {s['candidate_id']} [{s.get('status')}] {s.get('direction')}"
+                          for s in self.ev.load_solutions()[-12:])
+        text = (f"# stop-drift 终局（round {round_}，自动生成）\n\n"
+                f"连续 3 轮机器漂移判定非 ADVANCED（数据源 benchmark.csv，不采信 LLM 自评）。\n\n"
+                f"## bench 证据\n{rows}\n\n## 已试方向\n{tried}\n")
+        (self.task / "docs" / "verdict-drift.md").write_text(text, encoding="utf-8")
 
 
 def main() -> int:
@@ -588,11 +732,7 @@ def main() -> int:
     ap.add_argument("--task", required=True)
     ap.add_argument("--max-rounds", type=int, default=3)
     args = ap.parse_args()
-    try:
-        return AutonomousLoop(REPO_ROOT / "tasks" / args.task, args.max_rounds).run()
-    except QuotaError as e:
-        print(f"[loop] 配额暂停（状态已保存）：{e}", flush=True)
-        return 0
+    return AutonomousLoop(REPO_ROOT / "tasks" / args.task, args.max_rounds).run()
 
 
 if __name__ == "__main__":

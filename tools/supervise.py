@@ -33,9 +33,13 @@ def load_events(task: Path, round_: int | None) -> list[dict]:
     for line in audit.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        d = json.loads(line)
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
         if d.get("action") in ("router-query", "production-ref", "blindspot", "skill-inject",
-                               "candidate-write", "verify-step", "bench-step", "review"):
+                               "candidate-write", "verify-step", "bench-step", "review",
+                               "review-verdict", "drift-check"):
             if round_ is None or d.get("round") == round_:
                 evs.append(d)
     return evs
@@ -75,12 +79,46 @@ def check_round(evs: list[dict]) -> list[str]:
         v.append("BENCH-AFTER-VERIFY-FAIL：verify 未过仍 bench")
     if first("review") is None:
         v.append("NO-REVIEW")
+    # P0-1/P0-3 新契约：有效轮（非 parse-failed）必须 review-verdict 回写 + drift-check 在案
+    cw_rounds = [e for e in evs if e["action"] == "candidate-write"]
+    parse_failed = any((e.get("detail") or {}).get("direction") == "parse-failed"
+                       for e in cw_rounds)
+    if not parse_failed:
+        if not any(e["action"] == "review-verdict" for e in evs):
+            v.append("NO-REVIEW-VERDICT：评审结论未回写 solutions.jsonl（P0-1 契约）")
+        if not any(e["action"] == "drift-check" for e in evs):
+            v.append("NO-DRIFT-CHECK：本轮无机器漂移判定（P0-3 契约）")
     # writer 是否引用知识
     for e in evs:
         if e["action"] == "candidate-write":
             ku = e.get("detail", {}).get("knowledge_used") or []
             if not ku:
                 v.append(f"KNOWLEDGE-UNUSED：{e.get('target')} 的 writer 未声明引用任何知识")
+    return v
+
+
+def check_dag(task: Path) -> list[str]:
+    """P0-2：候选 DAG 完整性——非根候选 parent 必须指向存在的 cid。"""
+    v: list[str] = []
+    jsonl = task / "docs" / "solutions.jsonl"
+    if not jsonl.exists():
+        return v
+    import json as _j
+    rows = []
+    for line in jsonl.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            try:
+                rows.append(_j.loads(line))
+            except _j.JSONDecodeError:
+                v.append("SOLUTIONS-CORRUPT：solutions.jsonl 有不可解析行")
+    cids = {r.get("candidate_id") for r in rows}
+    latest: dict = {}
+    for r in rows:
+        latest[r.get("candidate_id")] = r
+    for cid, r in latest.items():
+        par = r.get("parent_id")
+        if par is not None and par not in cids:
+            v.append(f"DAG-BROKEN：{cid} 的 parent {par} 不存在")
     return v
 
 
@@ -133,6 +171,10 @@ def main() -> int:
         for x in viol:
             print(f"    !! {x}")
             all_ok = False
+    dag_viol = check_dag(task)
+    for x in dag_viol:
+        print(f"    !! {x}")
+        all_ok = False
     print("\n监督结论：", "全部轮次符合预期（调研→知识→写→验→评）" if all_ok else "存在违规，需人工干预")
     return 0 if all_ok else 2
 

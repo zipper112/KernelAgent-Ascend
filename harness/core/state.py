@@ -15,6 +15,14 @@ from .evidence import Evidence, atomic_write_json
 
 STALE_MINUTES = 30
 
+# 伪方向（P0-4）：parse/接口失败的占位方向不得计入 direction_fails（污染熔断②），
+# 也不得作为 candidates 历史的有效方向呈现
+PSEUDO_DIRECTIONS = {"", "parse-failed", "unspecified", "unknown", "none"}
+
+
+def is_pseudo_direction(direction: str | None) -> bool:
+    return str(direction or "").strip().lower() in PSEUDO_DIRECTIONS
+
 
 class SessionLock:
     """瞬时持锁：with 块内校验+刷新，退出不删（陪伴模式语义）。"""
@@ -73,6 +81,7 @@ class TaskState:
         path.parent.mkdir(parents=True, exist_ok=True)
         state = {"schema": 1, "task": task_name, "mode": "companion", "round": 0,
                  "best": None, "direction_fails": {}, "stall_count": 0,
+                 "writer_fails": 0, "last_progress": None,
                  "last_verdict": None, "pause": None, "terminal": None,
                  "phase": "P1", "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
         atomic_write_json(path, state)
@@ -98,9 +107,33 @@ class TaskState:
         return s
 
     def bump_direction_fail(self, direction: str) -> int:
-        """verify/bench reject 时 +1；返回该方向累计。达到 3 由调用方触发换向注入。"""
+        """verify/bench reject 时 +1；返回该方向累计。达到 3 由调用方触发换向注入。
+        P0-4：伪方向（parse-failed 等）直接返回 0 不计数。"""
+        if is_pseudo_direction(direction):
+            return 0
         s = self.require()
         fails = s.get("direction_fails", {})
         fails[direction] = fails.get(direction, 0) + 1
         self.update(direction_fails=fails)
         return fails[direction]
+
+    def bump_writer_fail(self) -> int:
+        """P0-4：writer 失败（parse-fail/preflight 拒绝且修复无效）独立计数。
+        连续 3 次 = 模型/协议问题（非方向问题），由调用方转 pause 终态。"""
+        s = self.require()
+        n = int(s.get("writer_fails", 0)) + 1
+        self.update(writer_fails=n)
+        return n
+
+    def reset_writer_fails(self) -> None:
+        if self.require().get("writer_fails"):
+            self.update(writer_fails=0)
+
+    def bump_stall(self, progress: str) -> int:
+        """P0-3 漂移状态机：progress ∈ {ADVANCED, STALLED, REGRESSED}（机器判定，
+        不采信 LLM 自评）。ADVANCED 清零，否则累计；返回当前 stall_count。"""
+        assert progress in ("ADVANCED", "STALLED", "REGRESSED"), f"非法 progress: {progress}"
+        s = self.require()
+        n = 0 if progress == "ADVANCED" else int(s.get("stall_count", 0)) + 1
+        self.update(stall_count=n, last_progress=progress)
+        return n

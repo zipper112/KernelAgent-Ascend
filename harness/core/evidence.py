@@ -12,6 +12,12 @@ from pathlib import Path
 
 CSV_HEADER = "ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdict,note"
 
+# verdict 词表（P0-1）：keep/revise/reject=评审终判；benched=bench 出数待评审；
+# invalid=测量无效（mean<=0/NaN），不进历史最优、不参与 keep 判定
+CSV_VERDICTS = ("keep", "revise", "reject", "benched", "invalid")
+# solutions.jsonl 状态机（P0-1 追加式迁移）：verified → benched|invalid → keep|revise|reject
+SOL_STATUSES = ("keep", "revise", "reject", "verified", "benched", "invalid")
+
 
 def _ts() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
@@ -49,8 +55,8 @@ class Evidence:
                          workload_set: str, mean_us: float | None, p50_us: float | None,
                          p99_us: float | None, speedup: float | None, verdict: str,
                          note: str = "") -> None:
-        """verdict ∈ {keep, revise, reject}；speedup 相对锁定 baseline（无则 n/a）。"""
-        assert verdict in ("keep", "revise", "reject"), f"非法 verdict: {verdict}"
+        """verdict ∈ CSV_VERDICTS；speedup 相对锁定 baseline（无则 n/a）。"""
+        assert verdict in CSV_VERDICTS, f"非法 verdict: {verdict}"
         assert workload_set in ("l0", "l1", "full"), f"非法 workload_set: {workload_set}"
         self._ensure_csv_header()
 
@@ -62,17 +68,21 @@ class Evidence:
         with open(self.csv, "a", encoding="utf-8", newline="") as f:
             f.write(row + "\n")
 
-    # ---------- solutions.jsonl（§3.2 候选 DAG） ----------
+    # ---------- solutions.jsonl（§3.2 候选 DAG；P0-1：追加式状态迁移） ----------
 
     def append_solution(self, candidate_id: str, parent_id: str | None, direction: str,
                         hypothesis: str, status: str, round_: int,
-                        fallback: bool = False, stage: str = "bench") -> None:
-        """status ∈ {keep, revise, reject}；verify 失败也入链（v0.2：stage=verify 计 direction_fails）。"""
-        assert status in ("keep", "revise", "reject"), f"非法 status: {status}"
+                        fallback: bool = False, stage: str = "bench",
+                        note: str = "") -> None:
+        """status ∈ SOL_STATUSES。迁移链：verified(verify 过) → benched/invalid(bench)
+        → keep/revise/reject(评审终判，record_review 写)。读取方取每 cid 最后一行。"""
+        assert status in SOL_STATUSES, f"非法 status: {status}"
         rec = {"candidate_id": candidate_id, "parent_id": parent_id, "direction": direction,
                "hypothesis": hypothesis, "diff_ref": f"solution/{candidate_id}/",
                "evidence_refs": [f"benchmark.csv#{candidate_id}"], "status": status,
                "round": round_, "fallback": fallback, "stage": stage}
+        if note:
+            rec["note"] = note[:200]
         with open(self.jsonl, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
@@ -80,6 +90,29 @@ class Evidence:
         if not self.jsonl.exists():
             return []
         return [json.loads(l) for l in self.jsonl.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+    def latest_status_map(self) -> dict[str, dict]:
+        """cid → 该 cid 的最后一行（P0-1 追加式迁移的唯一合法读取口径）。"""
+        m: dict[str, dict] = {}
+        for r in self.load_solutions():
+            m[r["candidate_id"]] = r
+        return m
+
+    def record_review(self, candidate_id: str, verdict: str, note: str = "",
+                      round_: int | None = None) -> None:
+        """评审终判回写（P0-1）：对已有行追加同 cid 新行，status=终判，stage=review。
+        方向/假设从该 cid 既有行继承（评审不改写候选自述）。"""
+        assert verdict in ("keep", "revise", "reject"), f"评审终判非法: {verdict}"
+        prev = None
+        for r in self.load_solutions():
+            if r["candidate_id"] == candidate_id:
+                prev = r
+        if prev is None:
+            raise ValueError(f"record_review: 候选 {candidate_id} 无既有行（verify 先行）")
+        self.append_solution(candidate_id, prev.get("parent_id"), prev.get("direction", ""),
+                             prev.get("hypothesis", ""), status=verdict,
+                             round_=round_ if round_ is not None else prev.get("round", 0),
+                             stage="review", note=note)
 
     # ---------- usage 账本（§7.2/§7.2a） ----------
 

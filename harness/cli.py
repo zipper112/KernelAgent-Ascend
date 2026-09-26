@@ -229,7 +229,7 @@ def cmd_verify(args) -> int:
         if passed:
             ev.append_solution(args.candidate, parent_id=_parent_of(ev, args.candidate),
                                direction=direction or "baseline",
-                               hypothesis="", status="keep", round_=state["round"], stage="verify")
+                               hypothesis="", status="verified", round_=state["round"], stage="verify")
         else:
             # v0.2：verify 失败入链 + 计数（封死单方向无限烧）
             ev.append_solution(args.candidate, parent_id=_parent_of(ev, args.candidate),
@@ -271,11 +271,31 @@ def _current_direction(task_root: Path, round_: int, ev: "Evidence | None" = Non
     return None
 
 
-def _parent_of(ev: Evidence, candidate_id: str) -> str | None:
-    """bench-auto 行的 parent 语义：无法从调用序可靠推断（v0.2 诚实化——此前取"最近其他候选"
-    会把先出现的候选挂到后出现的下面，破坏 DAG）。返回 None；真正的 DAG 边由 agent 在
-    solutions.jsonl 补写或 gate 校验时显式声明。"""
-    return None
+def _parent_of(ev: "Evidence", candidate_id: str) -> str | None:
+    """P0-2：DAG parent 推断（供 CLI 单独调用路径）。规则：
+    同方向上一 cid（refine）→ 该 cid；换向 → 当前最优 keep 候选；无 keep 且非首个 → None（根）。
+    自主循环路径在 loop.write_candidate 内按完整规则计算（含反馈方向识别），两者结果一致。"""
+    sols = [r for r in ev.load_solutions() if r["candidate_id"] != candidate_id]
+    if not sols:
+        return None
+    latest = ev.latest_status_map()
+    cur_dir = (latest.get(candidate_id) or {}).get("direction", "")
+    # 1) 同方向上一候选（refine 链）
+    if cur_dir:
+        for r in reversed(sols):
+            if r.get("direction") == cur_dir:
+                return r["candidate_id"]
+    # 2) 换向 → 挂当前全局最优 keep
+    best_cid = _best_keep_cid(latest)
+    return best_cid
+
+
+def _best_keep_cid(latest: dict[str, dict]) -> str | None:
+    """历史最优（keep 终判）候选；keep 之间取 round 最大（最新纪录保持者）。"""
+    keeps = [r for r in latest.values() if r.get("status") == "keep"]
+    if not keeps:
+        return None
+    return max(keeps, key=lambda r: int(r.get("round") or 0))["candidate_id"]
 
 
 def cmd_bench(args) -> int:
@@ -299,14 +319,18 @@ def cmd_bench(args) -> int:
         p99 = max((w.get("p99_us", 0) for w in wls), default=None)
         speedup = (sum(w.get("speedup_vs_ref", 0) for w in wls) / len(wls)
                    if wls and "speedup_vs_ref" in wls[0] else None)
+        # P0-5：测量有效性防御——mean<=0/NaN = 无效行（invalid），不进历史最优、不参与 keep 判定
+        import math as _math
+        valid = mean is not None and _math.isfinite(mean) and mean > 0
         ev.append_benchmark(args.candidate, None, state["phase"],
-                            args.workload_set, mean, p50, p99, speedup, verdict="keep",
+                            args.workload_set, mean, p50, p99, speedup,
+                            verdict="benched" if valid else "invalid",
                             note="bench-auto" + (" [contention!]" if contention and contention.get("foreign_processes") else ""))
         ev.log_audit("agent", "kda bench", target=args.candidate, round_=state["round"],
-                     detail={"mean_us": round(mean, 1) if mean else None,
+                     detail={"mean_us": round(mean, 1) if mean else None, "valid": valid,
                              **({"contention": contention} if contention else {})})
         return _out({"ok": True, "mean_us": mean, "p50_us": p50, "p99_us": p99,
-                     "speedup": speedup, "workloads": wls,
+                     "speedup": speedup, "valid": valid, "workloads": wls,
                      **({"contention": contention} if contention else {})}, 0)
     return _with_lock_and_state(task_root, run)
 
