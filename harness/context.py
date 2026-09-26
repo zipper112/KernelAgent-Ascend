@@ -100,8 +100,9 @@ def access_manual(task_root: Path, remote: dict) -> str:
 ## 你的 EXEC 义务（===EXEC=== 块写法）
 1. **同步**：把候选与冻结面推到 workspace/payload（tar 管道一条即可）：
    `tar cf - solution/<cid>/candidate.py reference.py bench/workloads.yaml {RUNNER_REL} {ENTRY_REL} | ssh {host} 'mkdir -p {ws}/payload {ws}/results && tar xf - -C {ws}/payload'`
-2. **job.json**：harness 已生成在本地 `run/job.json`（workload 档位/chained 参数是测量纪律，
-   **你不许改写它**；有异议在 HYPOTHESIS 里说）——同步后放到 `{ws}/payload/job.json`。
+2. **job.json**：harness 已生成本地 `run/job-verify.json` / `run/job-bench.json`（workload 档位/chained 参数是测量纪律，
+   **你不许改写它**；有异议在 HYPOTHESIS 里说）——同步后放到 `{ws}/payload/job.json`
+   （verify 用 job-verify.json，bench 用 job-bench.json；远端落点统一叫 job.json）。
 3. **canonical 出数**（唯一合法口径，参数照抄）：
    `{canonical_cmd(verify_job, remote)}`
 4. **回读结果**：`ssh {host} 'cat {ws}/results/<job_id>.json'`（job_id 见 job.json）。
