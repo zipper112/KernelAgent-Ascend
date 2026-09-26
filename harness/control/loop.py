@@ -46,6 +46,8 @@ class AutonomousLoop:
         self.ev = Evidence(self.task)
         self.st = TaskState(self.task, self.ev)
         self.models = ModelsClient(self.task)
+        from harness.control.memory import IterationMemory
+        self.mem = IterationMemory(self.task)   # 三源记忆层（Humanize 存续/KDA 证据/比赛经验）
         self.max_rounds = max_rounds
         self.budget = self._load_budget()
 
@@ -257,6 +259,9 @@ class AutonomousLoop:
 ## 候选历史（learn from evidence，勿重复已否决方向）
 {prev}
 
+## 迭代记忆（上一轮完整档案——评审原文含修复线索，代码含可复用部分）
+{self._memory_block()}
+
 ## 上一轮评审反馈
 {feedback or '（首轮）'}
 
@@ -396,6 +401,24 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
                                   "hypothesis": str(d.get("hypothesis"))[:150]})
         return {"cid": cid, **d}
 
+    def _memory_block(self) -> str:
+        """writer prompt 的记忆段：上轮档案全文 + 证据账本 + 经验库（三源内化）。"""
+        lr = self.mem.last_round()
+        parts = []
+        if lr:
+            r, rec = lr
+            parts.append(f"### 上轮（round {r}）完整档案\n"
+                         f"- direction: {rec.get('direction')}\n"
+                         f"- verify: {json.dumps(rec.get('verify', {}), ensure_ascii=False)[:300]}\n"
+                         f"- bench: {json.dumps(rec.get('bench', {}), ensure_ascii=False)[:200]}\n"
+                         f"- 评审原文:\n{str(rec.get('review_text', ''))[:2000]}")
+            code = str(rec.get('code', ''))
+            if code:
+                parts.append(f"- 上轮代码（可增量修改，勿从零重写）:\n```\n{code[:4000]}\n```")
+        parts.append(f"### bench 证据账本\n{self.mem.evidence_digest(self._best_baseline_us())}")
+        parts.append(f"### 沉淀经验（BitLesson——失败教训优先吸取）\n{self.mem.lessons_digest()}")
+        return "\n\n".join(parts)
+
     def _candidates_summary(self) -> str:
         sols = self.ev.load_solutions()
         if not sols:
@@ -472,6 +495,7 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
 输出：一段简短评审 + 末行裁决（恰好一行，在最后一行）。"""
         raw = self.models.chat("reviewer", [{"role": "user", "content": prompt}],
                                temperature=0.1, purpose=f"round{round_}-review")
+        self._last_review_text = raw          # 记忆层存档用（评审原文进下轮 prompt）
         self.ev.log_audit("gate", "review", target=f"round-{round_}", round_=round_,
                           detail={"tail": raw.strip().splitlines()[-1][:80] if raw.strip() else "",
                                   "best_us": best_us, "cur_us": cur_us, "beat_pct": beat})
@@ -516,6 +540,24 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
             verdict = self.review(round_, cand["cid"], vr, br)
             self.st.update(last_verdict=verdict)
             feedback = f"{verdict}: {cand.get('hypothesis', '')}"
+            # 记忆层轮末存档（Humanize 存续：下轮注入全文而非摘要）
+            self.mem.save_round(round_, {
+                "direction": cand.get("direction"), "hypothesis": cand.get("hypothesis"),
+                "verify": {"passed": vr.get("passed"),
+                           "err_ratio": [w.get("err_ratio") for w in vr.get("workloads", [])][:3],
+                           "error": str((vr.get("workloads") or [{}])[0].get("error", ""))[:150]},
+                "bench": {k: (br or {}).get(k) for k in ("mean_us", "p50_us", "p99_us", "speedup")},
+                "review_text": self._last_review_text,
+                "code": cand.get("code", ""),
+            })
+            # BitLesson 沉淀（比赛经验：每轮一条，失败教训优先）
+            if verdict == "keep" and br and br.get("mean_us"):
+                self.mem.add_lesson(round_, "win",
+                                    f"{cand.get('direction')} mean={br['mean_us']:.0f}us 刷新最优——该方向有效")
+            elif not vr.get("passed"):
+                err = str((vr.get("workloads") or [{}])[0].get("error", ""))[:120]
+                self.mem.add_lesson(round_, "fail",
+                                    f"{cand.get('direction')} verify 挂: {err or '数值超差'}——避免同类接口/边界错误")
             # 熔断②接线（v0.2 协议）：REVISE/REJECT 连续 3 次同方向 → 强制换向注入
             if verdict in ("REVISE", "REJECT"):
                 n = self.st.bump_direction_fail(str(cand.get("direction", "unknown"))[:40])
