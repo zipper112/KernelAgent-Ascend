@@ -1,0 +1,23 @@
+# 任务契约：K1 eager norm 计算群优化（K1 档框架侧调用点的算子本体）
+contract:
+  task_name: k1-eager-norm
+  op_family: norm
+  branch: task/k1-eager-norm
+  research:
+    symptoms: [mte2-bound, low-l2-hit]
+    sources: ["kernels/targets/K1（eager elementwise/norm/copy 群）", "production: norm 族（ops-nn/norm/）"]
+  objective: "RMSNorm 大 shape 延迟优化（baseline=torch eager 朴素式；K1 场景 bt8192 级长序列）"
+  correctness:
+    verifier: remote-runner-v0
+    tolerance_ref: "bf16 0.03 / fp16 0.004（dtype 分级）"
+    special_behaviors: ["eps=1e-6", "输出 dtype 与输入一致"]
+  performance:
+    baseline: "朴素 eager（x.float().pow(2).mean... 链）"
+    target: "≥1.5x（融合核方向已被初步证明有 2x 空间——找它）"
+    noise_floor: 0.05
+  allowed:
+    dsl: [pure-torch]
+    forbidden: ["不改 bench/", "禁 .item()/.cpu()/synchronize", "禁直接调用 torch_npu.npu_rms_norm（找等价或更优组合，证明你理解原理）"]
+  validation_cmd: "python -m harness.cli verify --task k1-eager-norm --candidate <cid>"
+  evaluation_cmd: "python -m harness.cli bench --task k1-eager-norm --candidate <cid>"
+  promotion: "≥1.5x 且 verify 全过"

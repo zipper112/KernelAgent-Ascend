@@ -1,0 +1,5 @@
+# K1 eager norm workload：bt8192 级长序列 prefill + decode 混合
+workloads:
+  - {id: w01, axes: {batch: 8, seq: 1024, hidden: 4096}, dtype: bf16, repr: true}
+  - {id: w02, axes: {batch: 2, seq: 4096, hidden: 4096}, dtype: bf16, repr: true}
+  - {id: w03, axes: {batch: 16, seq: 512, hidden: 2048}, dtype: bf16, repr: true}

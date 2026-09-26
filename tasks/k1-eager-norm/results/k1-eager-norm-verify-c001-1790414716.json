@@ -1,0 +1,32 @@
+{
+ "job_id": "k1-eager-norm-verify-c001-1790414716",
+ "kind": "verify",
+ "candidate_id": "c001",
+ "device_id": 0,
+ "physical_device_id": 6,
+ "passed": true,
+ "workloads": [
+  {
+   "id": "w01",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.03,
+   "mismatches": []
+  },
+  {
+   "id": "w02",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.03,
+   "mismatches": []
+  },
+  {
+   "id": "w03",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.03,
+   "mismatches": []
+  }
+ ],
+ "elapsed_s": 13.19
+}

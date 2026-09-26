@@ -1,0 +1,29 @@
+version: 0
+arch: dav_2201
+dsl: pure-torch
+device_id: 6
+workload:
+  full_set: bench/workloads.yaml
+  repr_tag: repr
+  l0_smoke: 1
+budget:
+  max_rounds: 3
+  max_direction_fails: 3
+  stall_replan: 2
+  api_calls: 2000
+  wall_clock_min: 720
+  token_budget: 20000000
+execution:
+  remote:
+    enabled: true
+    jump: jump
+    host: yq-e15
+    mirror_root: "~/kda-ascend"
+    device_id: 6
+    exec_mode: docker
+    docker_image: "ascend-triton:8.5.0-910b-arm64"
+    cann_env: ""
+measurement:
+  warmup: 3
+  samples: 5
+  l2_cache_clear: true
