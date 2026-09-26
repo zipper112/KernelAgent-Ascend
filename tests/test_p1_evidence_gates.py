@@ -188,20 +188,51 @@ def test_alignment_round_review(tmp_path, monkeypatch):
 # ---------- P1-6 sha 溯源 ----------
 
 def test_job_spec_audit_records_shas(tmp_path, monkeypatch):
-    """给定 _run_remote_job（远端桩化）→ 则 audit 的 job-spec-* 事件带
-    reference.py/workloads.yaml 的 sha256[:8]。"""
-    import harness.cli as cli
-    t = _mk_task(tmp_path)
-    # config 开 remote + 桩 run_job
-    (t / "config.yaml").write_text(
-        "execution:\n  remote:\n    enabled: true\n    jump: j\n    host: h\n"
-        "    exec_mode: docker\n    docker_image: i\n    device_id: 0\n", encoding="utf-8")
+    """给定 _run_remote_job（ADR-013 版，subprocess/tempfile 全桩）→ 则 audit 的
+    job-spec-* 事件带 sha256[:8]；chained 与 dev 档从 job.json 侧证。"""
+    import subprocess as _sp
+    import tempfile as _tf
     import harness.cli as cli_mod
-    import infra.remote.sync as sync_mod
-    captured = {}
-    monkeypatch.setattr(sync_mod, "run_job",
-                        lambda target, spec, *a, **k: captured.setdefault("spec", spec) or
-                        {"ok": True, "result": {"passed": True, "workloads": []}})
+    t = _mk_task(tmp_path)
+    (t / "config.yaml").write_text(
+        "execution:\n  remote:\n    enabled: true\n    host: h\n"
+        "    exec_mode: docker\n    docker_image: i\n    device_id: 0\n", encoding="utf-8")
+    jobs = {}
+
+    class R:
+        def __init__(self, rc=0, out="", err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
+
+    def fake_run(cmd, **kw):
+        s = cmd if isinstance(cmd, str) else " ".join(str(c) for c in cmd)
+        if "tar cf -" in s:
+            jobs["files"] = s.split("tar cf - ")[1].split(" |")[0].split()
+        # 消费并关闭 stdin（Windows 句柄锁——真实 subprocess 会做）
+        f = kw.get("stdin")
+        if f and hasattr(f, "read"):
+            f.read()
+            f.close()
+        return R(0)
+    monkeypatch.setattr(_sp, "run", fake_run)
+
+    _orig_ntf = _tf.NamedTemporaryFile
+
+    class _TF:
+        name = "jobstub.json"
+        def __init__(self, *a, **k):
+            k.pop("delete", None)
+            self._f = _orig_ntf(*a, delete=False, **k)
+            _TF.name = self._f.name
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            self._f.flush()
+            import json as _j
+            jobs["job"] = _j.loads(open(_TF.name, encoding="utf-8").read())
+        def write(self, s):
+            self._f.write(s)
+    monkeypatch.setattr(_tf, "NamedTemporaryFile", _TF)
+
     st = TaskState(t, Evidence(t))
     state = st.require()
     cli_mod._run_remote_job(t, state, "verify", "c001", "l0", Evidence(t))
@@ -209,11 +240,12 @@ def test_job_spec_audit_records_shas(tmp_path, monkeypatch):
     assert "job-spec-verify" in audit and "shas" in audit
     rec = json.loads([l for l in audit.splitlines() if "job-spec-verify" in l][-1])
     assert len(rec["detail"]["shas"]["reference.py"]) == 8
-    # 链式任务透传
-    assert captured["spec"].extra.get("verify_mode") == "chained"
-    assert captured["spec"].extra.get("chain_steps") == 3
-    # dev 档过滤透传到 spec
-    assert [w["id"] for w in captured["spec"].workloads] == ["w02"]
+    # 链式任务透传（job.json 侧证）
+    assert jobs["job"]["extra"].get("verify_mode") == "chained"
+    assert jobs["job"]["extra"].get("chain_steps") == 3
+    # dev 档过滤 + payload 同步清单含冻结面
+    assert [w["id"] for w in jobs["job"]["workloads"]] == ["w02"]
+    assert "reference.py" in jobs["files"] and "bench/workloads.yaml" in jobs["files"]
 
 
 # ---------- P1-7 选课 ----------

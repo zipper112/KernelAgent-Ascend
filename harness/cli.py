@@ -156,16 +156,16 @@ def cmd_budget(args) -> int:
 
 
 def _device_contention(task_root: Path, ev, state: dict, device_id: int) -> dict | None:
-    """bench 前争用探针：目标卡上有他人进程 → audit 记 warning（数据可能污染，不阻塞——共用机现实）。"""
+    """bench 前争用探针（ADR-013 裸 ssh 版）：目标卡上有他人进程 → audit 记 warning。"""
     try:
+        import subprocess as _sp
         import yaml as _y
-        cfg = _y.safe_load((task_root / "config.yaml").read_text(encoding="utf-8"))
-        rem = cfg.get("execution", {}).get("remote", {})
-        from infra.remote.executor import RemoteExecutor, RemoteTarget
-        tgt = RemoteTarget(jump=rem.get("jump", "jump"), host=rem.get("host", "yq-e15"))
-        r = RemoteExecutor(tgt).run(
-            f"npu-smi info | grep -A6 'NPU {device_id} ' | grep -c 'Process id' || true", timeout_s=30)
-        n = int((r.get("stdout") or "0").strip().splitlines()[-1] or 0)
+        rem = _y.safe_load((task_root / "config.yaml").read_text(encoding="utf-8"))             .get("execution", {}).get("remote", {})
+        host = rem.get("host", "yq-e15")
+        r = _sp.run(["ssh", "-o", "BatchMode=yes", host,
+                     f"npu-smi info | grep -A6 'NPU {device_id} ' | grep -c 'Process id' || true"],
+                    capture_output=True, text=True, timeout=30)
+        n = int((r.stdout or "0").strip().splitlines()[-1] or 0)
         info = {"device": device_id, "foreign_processes": n}
         if n > 0:
             ev.log_audit("harness", "contention-warning", round_=state.get("round"),
@@ -198,61 +198,93 @@ def _filter_workloads(task_root: Path, wls: list[dict], workload_set: str) -> li
 
 def _run_remote_job(task_root: Path, state: dict, kind: str, candidate_id: str,
                     workload_set: str, ev: Evidence) -> dict:
-    """verify/bench 公共：JobSpec 组装（含 payload 必备件）→ run_job → evidence 落盘。
-    P1-6：audit 记 reference.py/workloads.yaml 的 sha256 前 8 位（证据防篡改溯源）。"""
-    import hashlib
+    """ADR-013：canonical 直跑（context.py 模板 + 裸 ssh 管道）。
+    job 生成（双档/chained/sha）在 harness 侧；canonical runner 是唯一出数口径。"""
+    import json
+    import subprocess
+    import time
     import yaml
-    from infra.remote.executor import RemoteTarget
-    from infra.remote.sync import JobSpec, run_job
+    from harness.context import (build_job_payload, canonical_cmd, payload_files,
+                                 remote_workspace, _sha8)
 
     cfg = yaml.safe_load((task_root / "config.yaml").read_text(encoding="utf-8"))
     rem = cfg.get("execution", {}).get("remote", {})
     if not rem.get("enabled", False):
         return {"error": "remote-disabled（本地执行模式批 C 实装）"}
-    wls_data = yaml.safe_load((task_root / "bench" / "workloads.yaml").read_text(encoding="utf-8"))
-    # workload 透传完整定义（含多张量 inputs spec；dtype 缺省补 fp16）；P1-1：按档过滤
+    host = rem.get("host", "yq-e15")
+    ws = remote_workspace(task_root.name, rem)
+    wls_data = yaml.safe_load((task_root / "bench" / "workloads.yaml")
+                              .read_text(encoding="utf-8"))["workloads"]
     wls = []
-    for w in _filter_workloads(task_root, wls_data["workloads"], workload_set):
+    for w in _filter_workloads(task_root, wls_data, workload_set):
         item = {"id": w["id"], "axes": w["axes"], "dtype": w.get("dtype", "fp16")}
         if "inputs" in w:
             item["inputs"] = w["inputs"]
         wls.append(item)
     meas = cfg.get("measurement", {})
-    files = [f"solution/{candidate_id}/candidate.py"]
-    for extra in ("reference.py", "bench/workloads.yaml"):   # §8b：workload 定义必达（v0.2 修复：漏推致远端读旧残留）
-        if (task_root / extra).exists():
-            files.append(extra)
-    # P1-2：链式终态门透传（task.yaml contract.verify_mode: chained + chain_steps）
-    try:
-        tcfg = yaml.safe_load((task_root / "task.yaml").read_text(encoding="utf-8"))
-        vm = (tcfg.get("contract", {}) or {}).get("verify_mode")
-    except Exception:   # noqa: BLE001
-        vm = None
-    extra_job = {"warmup": meas.get("warmup", 3), "samples": meas.get("samples", 5)}
-    if vm == "chained":
-        extra_job["verify_mode"] = "chained"
-        extra_job["chain_steps"] = int((tcfg.get("contract", {}) or {}).get("chain_steps", 3))
-    # P1-6：payload 溯源指纹
+    extra = ({"warmup": meas.get("warmup", 3), "samples": meas.get("samples", 5)}
+             if kind == "bench" else {})
+    if kind == "verify":
+        try:
+            tcfg = yaml.safe_load((task_root / "task.yaml").read_text(encoding="utf-8"))
+            if (tcfg.get("contract", {}) or {}).get("verify_mode") == "chained":
+                extra = {"verify_mode": "chained",
+                         "chain_steps": int(tcfg["contract"].get("chain_steps", 3))}
+        except Exception:   # noqa: BLE001
+            pass
     shas = {}
     for f in ("reference.py", "bench/workloads.yaml"):
         p = task_root / f
         if p.exists():
-            shas[f] = hashlib.sha256(p.read_bytes()).hexdigest()[:8]
-    spec = JobSpec(job_id=f"{state['task']}-{kind}-{candidate_id}-{int(time.time())}",
-                   kind=kind, candidate_id=candidate_id, task=state["task"],
-                   files=files, workloads=wls, workload_set=workload_set,
-                   timeout_s=600, device_id=rem.get("device_id", 0),
-                   extra=extra_job)
-    target = RemoteTarget(jump=rem.get("jump", "jump"), host=rem.get("host", "yq-e15"),
-                          exec_mode=rem.get("exec_mode", "docker"),
-                          docker_image=rem.get("docker_image", ""),
-                          cann_env=rem.get("cann_env", ""))
+            shas[f] = _sha8(p)
+    job = {"job_id": f"{task_root.name}-{kind}-{candidate_id}-{int(time.time())}",
+           "kind": kind, "candidate_id": candidate_id, "task": task_root.name,
+           "workloads": wls, "device_id": 0,
+           "physical_device_id": int(rem.get("device_id", 0)), "extra": extra}
     ev.log_audit("harness", f"job-spec-{kind}", target=candidate_id, round_=state.get("round"),
-                 detail={"workload_set": workload_set, "n_workloads": len(wls), "shas": shas,
-                         **({"verify_mode": extra_job["verify_mode"]} if vm == "chained" else {})})
-    return run_job(target, spec, rem.get("mirror_root", "~/kda-ascend"),
-                   "infra/remote/runner.py", task_root, task_root / "results",
-                   repo_root=REPO_ROOT)
+                 detail={"workload_set": workload_set, "n_workloads": len(wls),
+                         "shas": shas, "job_id": job["job_id"],
+                         **({"verify_mode": "chained"} if extra.get("verify_mode") else {})})
+    # 同步 payload + job.json（tar 管道一条；本地任务目录为 cwd）
+    files = payload_files(task_root, candidate_id)
+    tar_list = " ".join(files)
+    import shlex
+    sync = subprocess.run(
+        f"tar cf - {tar_list} | ssh -o BatchMode=yes {host} "
+        f"'mkdir -p {ws}/payload {ws}/results && tar xf - -C {ws}/payload'",
+        shell=True, capture_output=True, timeout=300, cwd=str(task_root))
+    if sync.returncode != 0:
+        return {"ok": False, "stage": "push", "error": sync.stderr.decode()[:200]}
+    import tempfile, os
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tf:
+        json.dump(job, tf, ensure_ascii=False)
+        jpath = tf.name
+    try:
+        with open(jpath, "rb") as f:
+            jj = subprocess.run(["ssh", "-o", "BatchMode=yes", host,
+                                 f"cat > {ws}/payload/job.json"],
+                                stdin=f, capture_output=True, timeout=60)
+    finally:
+        try:
+            os.unlink(jpath)
+        except OSError:
+            pass
+    if jj.returncode != 0:
+        return {"ok": False, "stage": "job.json", "error": jj.stderr.decode()[:200]}
+    # canonical 执行 + 结果回读
+    ex = subprocess.run(["ssh", "-o", "BatchMode=yes", host, canonical_cmd(job, rem)],
+                        capture_output=True, text=True, timeout=job_timeout(kind) + 120)
+    cat = subprocess.run(["ssh", "-o", "BatchMode=yes", host,
+                          f"cat {ws}/results/{job['job_id']}.json"],
+                         capture_output=True, text=True, timeout=120)
+    if cat.returncode != 0 or not cat.stdout.strip():
+        return {"ok": False, "stage": "pull", "error": cat.stderr[:200] or "results json 缺失",
+                "remote_tail": (ex.stdout or ex.stderr)[-300:]}
+    return {"ok": True, "result": json.loads(cat.stdout)}
+
+
+def job_timeout(kind: str) -> int:
+    return 600
 
 
 def cmd_verify(args) -> int:

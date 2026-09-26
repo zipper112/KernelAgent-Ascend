@@ -260,16 +260,23 @@ class AutonomousLoop:
 ## 迭代记忆（上一轮完整档案——评审原文含修复线索，代码含可复用部分）
 {self._memory_block()}
 
-## 上一轮评审反馈
-{feedback or '（首轮）'}
+        ## NPU 访问上下文（===EXEC=== 块的写作依据；canonical runner 是唯一出数口径）
+        {self._access_context()}
 
-## 输出格式（分隔符协议——代码不转义，防截断浪费）
-先输出三行元信息，然后代码块，总共严格控制在 250 行以内（精炼优先，注释从简）：
+        ## 上一轮评审反馈
+        {feedback or '（首轮）'}
+
+        ## 输出格式（分隔符协议——代码/命令不转义，防截断浪费）
+        先输出三行元信息，然后代码块与 EXEC 块，总共严格控制在 260 行以内（精炼优先，注释从简）：
 DIRECTION: <方向名>
 HYPOTHESIS: <一句话假设>
 KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
 ===CODE===
 <candidate.py 完整内容，纯文本不转义>
+===END===
+===EXEC===
+<远端验证/测量的 shell 命令序列，按 NPU 访问上下文的 4 步义务写；
+ 可加前置探针，但出数必须走 canonical runner；留空则 harness 用 canonical 模板兜底>
 ===END===
 """
         raw = self.models.chat("writer", [{"role": "user", "content": prompt}],
@@ -328,8 +335,9 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
 
     @staticmethod
     def _parse_candidate(raw: str) -> dict | None:
-        """分隔符协议解析：DIRECTION/HYPOTHESIS/KNOWLEDGE 三行 + ===CODE=== ... ===END=== 块。
-        代码零转义（Triton 任务的 JSON 转义会浪费 ~20% 输出预算且易截断）。"""
+        """分隔符协议解析：DIRECTION/HYPOTHESIS/KNOWLEDGE 三行 + ===CODE=== 块 +
+        可选 ===EXEC=== 块（ADR-013：LLM 自主远端访问命令序列）。
+        代码/EXEC 零转义（Triton 任务的 JSON 转义会浪费 ~20% 输出预算且易截断）。"""
         if not raw or not raw.strip():
             return None
         t = raw.strip()
@@ -353,6 +361,10 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         if not code.strip():
             return None
         d["code"] = code
+        # EXEC 块（可选）：与 CODE 同族解析；缺省=canonical 兜底
+        me = re.search(r"===EXEC===\s*\n(.*?)(?:\n===END===|\Z)", t, re.S)
+        if me:
+            d["exec"] = me.group(1).strip()
         if "direction" not in d:
             d["direction"] = "unspecified"
         return d
@@ -409,6 +421,20 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
             return max(keeps, key=lambda r: int(r.get("round") or 0))["candidate_id"]
         return None
 
+    def _access_context(self) -> str:
+        """ADR-013：NPU 访问手册（context.py 生成；remote 未启用时给本地占位）。"""
+        import yaml
+        cfg = yaml.safe_load((self.task / "config.yaml").read_text(encoding="utf-8"))
+        rem = cfg.get("execution", {}).get("remote", {})
+        if not rem.get("enabled", False):
+            return "（remote 未启用——本地执行模式）"
+        from harness.context import access_manual
+        manual = access_manual(self.task, rem)
+        # 手册同步落盘（人可查 + 溯源）
+        (self.task / "docs").mkdir(exist_ok=True)
+        (self.task / "docs" / "npu-access.md").write_text(manual, encoding="utf-8")
+        return manual
+
     def _memory_block(self) -> str:
         """writer prompt 的记忆段：上轮档案全文 + 证据账本 + 经验库（三源内化）。
         P0-6：评审原文截断自适应——min(6000, 上下文余量/6)，至少 2500 字
@@ -440,35 +466,150 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
             return "（无）"
         return "\n".join(f"- {s['candidate_id']} [{s['status']}/{s.get('stage')}] dir={s['direction']}" for s in sols[-8:])
 
-    # ---------- 阶段 3/4：VERIFY / BENCH（复用 CLI 内部逻辑） ----------
+    # ---------- 阶段 3/4：EXEC（ADR-013：LLM 自主远端访问，canonical 兜底） ----------
 
-    def _run_cli(self, fn_name: str, cid: str, workload_set: str = "l0") -> tuple[int, dict]:
+    def _remote_cfg(self) -> dict:
+        import yaml
+        return yaml.safe_load((self.task / "config.yaml")
+                              .read_text(encoding="utf-8")).get("execution", {}).get("remote", {})
+
+    def _gen_jobs(self, candidate_id: str) -> dict:
+        """生成 verify+bench 两个 job.json（workload 双档/chained/sha 全在 harness 侧——
+        测量纪律不交给 LLM）。落盘 run/job-verify.json / run/job-bench.json 并返回
+        {verify: job, bench: job, files: 同步清单, shas}。"""
+        import yaml
+        from harness.context import build_job_payload, payload_files, _sha8
+        wls_data = yaml.safe_load((self.task / "bench" / "workloads.yaml")
+                                  .read_text(encoding="utf-8"))["workloads"]
         import harness.cli as cli
-        args = argparse.Namespace(task=str(self.task), candidate=cid, workload_set=workload_set)
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = getattr(cli, f"cmd_{fn_name}")(args)
+        dev_wls = []
+        for w in cli._filter_workloads(self.task, wls_data, "l0"):
+            item = {"id": w["id"], "axes": w["axes"], "dtype": w.get("dtype", "fp16")}
+            if "inputs" in w:
+                item["inputs"] = w["inputs"]
+            dev_wls.append(item)
+        full_wls = []
+        for w in cli._filter_workloads(self.task, wls_data, "full"):
+            item = {"id": w["id"], "axes": w["axes"], "dtype": w.get("dtype", "fp16")}
+            if "inputs" in w:
+                item["inputs"] = w["inputs"]
+            full_wls.append(item)
+        tcfg = yaml.safe_load((self.task / "task.yaml").read_text(encoding="utf-8"))
+        vextra = {}
+        if (tcfg.get("contract", {}) or {}).get("verify_mode") == "chained":
+            vextra = {"verify_mode": "chained",
+                      "chain_steps": int(tcfg["contract"].get("chain_steps", 3))}
+        meas = yaml.safe_load((self.task / "config.yaml")
+                              .read_text(encoding="utf-8")).get("measurement", {})
+        bextra = {"warmup": meas.get("warmup", 3), "samples": meas.get("samples", 5)}
+        rem = self._remote_cfg()
+        dev = int(rem.get("device_id", 0))
+        vjob = build_job_payload(self.task, candidate_id, "verify", dev_wls, vextra, dev)
+        bjob = build_job_payload(self.task, candidate_id, "bench", dev_wls, bextra, dev)
+        fjob = dict(bjob)     # full 档复核用（COMPLETE 前）
+        fjob["workloads"] = full_wls
+        fjob["workload_set"] = "full"
+        (self.task / "run").mkdir(exist_ok=True)
+        for name, job in (("job-verify.json", vjob), ("job-bench.json", bjob), ("job-bench-full.json", fjob)):
+            (self.task / "run" / name).write_text(
+                json.dumps(job, ensure_ascii=False, indent=1), encoding="utf-8")
+        shas = {}
+        for f in ("reference.py", "bench/workloads.yaml"):
+            p = self.task / f
+            if p.exists():
+                shas[f] = _sha8(p)
+        return {"verify": vjob, "bench": bjob, "bench_full": fjob,
+                "files": payload_files(self.task, candidate_id), "shas": shas}
+
+    def _canonical_exec(self, kind: str, jobs: dict) -> str:
+        """canonical 兜底 EXEC 脚本（LLM 未给 ===EXEC=== 块时用）。"""
+        from harness.context import canonical_cmd, remote_workspace
+        rem = self._remote_cfg()
+        host = rem.get("host", "yq-e15")
+        ws = remote_workspace(self.task.name, rem)
+        job = jobs[kind]
+        job_id = job["job_id"]
+        files = jobs["files"]
+        tar_list = " ".join(files)
+        jname = "job-bench-full.json" if kind == "bench_full" else f"job-{kind}.json"
+        return (
+            f"tar cf - {tar_list} | ssh {host} 'mkdir -p {ws}/payload {ws}/results && tar xf - -C {ws}/payload'\n"
+            f"cat run/{jname} | ssh {host} 'cat > {ws}/payload/job.json'\n"
+            f"ssh {host} \"{canonical_cmd(job, rem)}\"\n"
+            f"ssh {host} 'cat {ws}/results/{job_id}.json'\n"
+        )
+
+    def _run_exec(self, round_: int, script: str, jobs: dict, kind: str,
+                  candidate_id: str) -> dict:
+        """执行 EXEC 脚本（policy 已过）→ 解析 results json。失败返回 {ok:False,...}。"""
+        host = self._remote_cfg().get("host", "yq-e15")
+        # 记录脚本供审计/复盘
+        (self.task / "run").mkdir(exist_ok=True)
+        (self.task / f"run/round-{round_}-exec.sh").write_text(script, encoding="utf-8")
         try:
-            return rc, json.loads(buf.getvalue())
-        except Exception:
-            return rc, {"raw": buf.getvalue()[:300]}
+            # 脚本在仓根 cwd 下执行（tar 相对路径 / cat run/... 相对任务目录不适用——
+            # 统一在任务目录下 bash -s，canonical 模板里的路径按此写）
+            proc = subprocess.run(["bash", "-s"], input=script, capture_output=True,
+                                  text=True, timeout=700, cwd=str(self.task))
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "stage": "exec", "error": "exec-timeout>700s"}
+        job = jobs[kind]
+        # 从 stdout 提取 results json（最后一行合法 JSON 且含 job_id）
+        result = None
+        for line in reversed((proc.stdout or "").splitlines()):
+            line = line.strip()
+            if line.startswith("{") and '"job_id"' in line:
+                try:
+                    d = json.loads(line)
+                    if d.get("job_id") == job["job_id"]:
+                        result = d
+                        break
+                except json.JSONDecodeError:
+                    continue
+        if result is None:
+            # 单行提取失败→尝试整体最大 JSON 块
+            try:
+                i = (proc.stdout or "").rindex('{"job_id"')
+                result = json.loads(proc.stdout[i:proc.stdout.find("}", i) + 1]) \
+                    if False else None
+            except ValueError:
+                result = None
+        self.ev.log_audit("harness", "exec-run", target=candidate_id, round_=round_,
+                          detail={"kind": kind, "rc": proc.returncode,
+                                  "stdout_tail": (proc.stdout or "")[-300:],
+                                  "stderr_tail": (proc.stderr or "")[-200:]})
+        if result is None:
+            return {"ok": False, "stage": "parse", "rc": proc.returncode,
+                    "error": f"results json 未在 stdout 中（rc={proc.returncode}）",
+                    "stdout_tail": (proc.stdout or "")[-300:],
+                    "stderr_tail": (proc.stderr or "")[-200:]}
+        return {"ok": True, "result": result}
 
-    def verify(self, round_: int, cid: str) -> dict:
-        rc, out = self._run_cli("verify", cid)
-        self.ev.log_audit("harness", "verify-step", target=cid, round_=round_,
-                          detail={"rc": rc, "passed": out.get("passed"),
-                                  "mode": out.get("verify_mode")})
-        return out
-
-    def bench(self, round_: int, cid: str, workload_set: str = "l0") -> dict:
-        """P1-1：默认 dev 档（l0）快速迭代；review 判 COMPLETE 前用 full 档复核
-        （防单形状过拟合——比赛 8 代表行/19 验收行的分层评测机制）。"""
-        rc, out = self._run_cli("bench", cid, workload_set)
-        self.ev.log_audit("harness", "bench-step", target=cid, round_=round_,
-                          detail={"rc": rc, "mean_us": out.get("mean_us"),
-                                  "speedup": out.get("speedup"),
-                                  "workload_set": workload_set})
-        return out
+    def exec_stage(self, round_: int, cand: dict, kind: str = "verify") -> dict:
+        """EXEC 阶段入口：job 生成 → policy 检查 → 执行（LLM 脚本或 canonical 兜底）。
+        返回 canonical results dict（verify: {passed, workloads}；bench: {workloads...}）。"""
+        from harness.control.exec_policy import check_exec_block
+        jobs = self._gen_jobs(cand["cid"])
+        self.ev.log_audit("harness", f"job-spec-{kind.split('_')[0]}", target=cand["cid"],
+                          round_=round_,
+                          detail={"n_workloads": len(jobs[kind]["workloads"]),
+                                  "shas": jobs["shas"], "job_id": jobs[kind]["job_id"],
+                                  **({"verify_mode": "chained"}
+                                     if jobs["verify"].get("extra", {}).get("verify_mode")
+                                     else {})})
+        script = cand.get("exec") or self._canonical_exec(kind, jobs)
+        if cand.get("exec"):
+            ok, reason = check_exec_block(cand["exec"])
+            if not ok:
+                self.ev.log_audit("harness", "exec-policy-reject", target=cand["cid"],
+                                  round_=round_, detail={"reason": reason})
+                return {"ok": False, "stage": "policy", "error": reason}
+        r = self._run_exec(round_, script, jobs, kind, cand["cid"])
+        if not r.get("ok"):
+            self.ev.log_audit("harness", "exec-fail", target=cand["cid"], round_=round_,
+                              detail={"stage": r.get("stage"), "error": str(r.get("error"))[:150]})
+            return r
+        return r["result"]
 
     # ---------- 阶段 5：REVIEW ----------
 
@@ -649,11 +790,52 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
                     self.ev.log_audit("harness", "verify-step", target=cand["cid"], round_=round_,
                                       detail={"rc": 2, "passed": False, "skipped": "parse-failed"})
                 else:
-                    vr = self.verify(round_, cand["cid"])
+                    res = self.exec_stage(round_, cand, "verify")
+                    vr = res if res.get("passed") is not None else \
+                        {"passed": False, "workloads": res.get("workloads", []),
+                         "error": res.get("error", "exec-failed")}
+                    # verify 结果也进 solutions.jsonl（CLI 落账逻辑内联——keep P0-1 语义）
+                    from harness.core.state import is_pseudo_direction as _ipd
+                    direction = cand.get("direction") or "unknown"
+                    if vr.get("passed"):
+                        self.ev.append_solution(cand["cid"], parent_id=cand.get("parent"),
+                                                direction=direction,
+                                                hypothesis=str(cand.get("hypothesis", ""))[:200],
+                                                status="verified", round_=round_, stage="verify")
+                    elif not _ipd(direction):
+                        self.ev.append_solution(cand["cid"], parent_id=cand.get("parent"),
+                                                direction=direction,
+                                                hypothesis=str(cand.get("hypothesis", ""))[:200],
+                                                status="reject", round_=round_, stage="verify")
+                        n = self.st.bump_direction_fail(str(direction)[:40])
+                        self.ev.log_audit("harness", "fuse-check", target=f"direction={direction[:40]}",
+                                          round_=round_, detail={"consecutive_fails": n})
+                    self.ev.log_audit("harness", "verify-step", target=cand["cid"], round_=round_,
+                                      detail={"passed": vr.get("passed"),
+                                              "err_ratio": [w.get("err_ratio") for w in vr.get("workloads", [])][:5],
+                                              "mode": res.get("verify_mode") if isinstance(res, dict) else None})
                 br = None
                 if vr.get("passed"):
                     print(f"[loop] round {round_} BENCH...", flush=True)
-                    br = self.bench(round_, cand["cid"])
+                    bres = self.exec_stage(round_, cand, "bench")
+                    wls = bres.get("workloads", [])
+                    mean = sum(w.get("mean_us", 0) for w in wls) / max(len(wls), 1)
+                    p50 = sorted(w.get("p50_us", 0) for w in wls)[len(wls) // 2] if wls else None
+                    p99 = max((w.get("p99_us", 0) for w in wls), default=None)
+                    speedup = (sum(w.get("speedup_vs_ref", 0) for w in wls) / len(wls)
+                               if wls and "speedup_vs_ref" in wls[0] else None)
+                    import math as _math
+                    valid = bool(wls) and _math.isfinite(mean) and mean > 0
+                    br = {"mean_us": mean, "p50_us": p50, "p99_us": p99,
+                          "speedup": speedup, "valid": valid}
+                    # bench 落账（P0-1/P0-5：verdict=benched/invalid）
+                    self.ev.append_benchmark(cand["cid"], cand.get("parent"), "P1",
+                                             "l0", mean, p50, p99, speedup,
+                                             verdict="benched" if valid else "invalid",
+                                             note="exec-auto")
+                    self.ev.log_audit("harness", "bench-step", target=cand["cid"], round_=round_,
+                                      detail={"mean_us": round(mean, 1) if mean else None,
+                                              "valid": valid, "workload_set": "l0"})
                 print(f"[loop] round {round_} REVIEW...", flush=True)
                 verdict = self.review(round_, cand["cid"], vr, br)
                 self.st.update(last_verdict=verdict)
@@ -713,17 +895,25 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
                     # P1-1：COMPLETE 前 full 档复核（dev 集夺冠不算数——防单形状过拟合）
                     if verdict == "COMPLETE" and br and br.get("valid"):
                         print(f"[loop] round {round_} FULL-SET REBENCH...", flush=True)
-                        br_full = self.bench(round_, cand["cid"], workload_set="full")
-                        if not br_full.get("valid") or \
-                           (best_before := self._best_baseline_us()) and br_full.get("mean_us") \
-                           and br_full["mean_us"] >= best_before:
+                        fres = self.exec_stage(round_, cand, "bench_full")
+                        fwls = fres.get("workloads", [])
+                        fmean = sum(w.get("mean_us", 0) for w in fwls) / max(len(fwls), 1)
+                        import math as _fm
+                        fvalid = bool(fwls) and _fm.isfinite(fmean) and fmean > 0
+                        if fvalid:
+                            self.ev.append_benchmark(cand["cid"], cand.get("parent"), "P1",
+                                                     "full", fmean,
+                                                     sorted(w.get("p50_us", 0) for w in fwls)[len(fwls) // 2],
+                                                     max((w.get("p99_us", 0) for w in fwls), default=None),
+                                                     None, verdict="benched", note="full-rebench")
+                        best_before = self._best_baseline_us()
+                        if not fvalid or (best_before and fmean >= best_before):
                             verdict = "REVISE"
                             self.ev.log_audit("harness", "full-rebench-downgrade",
                                               target=cand["cid"], round_=round_,
-                                              detail={"full_mean_us": br_full.get("mean_us"),
-                                                      "best_before": best_before})
+                                              detail={"full_mean_us": fmean, "best_before": best_before})
                             feedback = (f"REVISE: full 档复核未达标（full mean="
-                                        f"{br_full.get('mean_us')} vs 最优 {best_before}）"
+                                        f"{fmean} vs 最优 {best_before}）"
                                         f"——dev 集结果不可外推，修全形状泛化")
                     if verdict in ("COMPLETE", "STOP"):
                         self.st.update(terminal=verdict)

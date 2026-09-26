@@ -1,7 +1,7 @@
 """tests/test_tools.py —— tools/ 五脚本纯函数单元测试（零网络/零 SSH）。
 
 期望先行：每用例 docstring 写「给定 → 当 → 则」。
-覆盖：smoke_remote_job.load_workloads、provision_npu.resolve_closure(mock _open)、
+覆盖：provision_npu.resolve_closure(mock _open)、
 check_env（record/check_repo_layout/check_skills/check_router）、
 sync_assets（tree_sha/parse_manifest）、build_production_index（detect_archs/scan_repo）。
 """
@@ -22,23 +22,6 @@ def _load_tool(name: str):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
-
-
-# ---------- smoke_remote_job.load_workloads ----------
-
-def test_load_workloads_parses_yaml(tmp_path):
-    """给定三档 workload yaml（bench/ 下）→ 则 [{id,axes,dtype}] 且未知字段不透传。"""
-    bench = tmp_path / "bench"; bench.mkdir()
-    (bench / "workloads.yaml").write_text(
-        "workloads:\n"
-        "  - {id: w01, axes: {batch: 1, seq: 128, hidden: 4096}, dtype: fp16, repr: true}\n"
-        "  - {id: w02, axes: {batch: 2, seq: 64, hidden: 2048}}\n", encoding="utf-8")
-    m = _load_tool("smoke_remote_job")
-    wls = m.load_workloads(tmp_path)
-    assert wls == [
-        {"id": "w01", "axes": {"batch": 1, "seq": 128, "hidden": 4096}, "dtype": "fp16"},
-        {"id": "w02", "axes": {"batch": 2, "seq": 64, "hidden": 2048}, "dtype": "fp16"},   # 缺省 fp16
-    ]
 
 
 # ---------- provision_npu.resolve_closure ----------
