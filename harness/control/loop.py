@@ -576,21 +576,48 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
                         break
                 except json.JSONDecodeError:
                     continue
-        if result is None:
-            # 单行提取失败→尝试整体最大 JSON 块
-            try:
-                i = (proc.stdout or "").rindex('{"job_id"')
-                result = json.loads(proc.stdout[i:proc.stdout.find("}", i) + 1]) \
-                    if False else None
-            except ValueError:
-                result = None
         self.ev.log_audit("harness", "exec-run", target=candidate_id, round_=round_,
                           detail={"kind": kind, "rc": proc.returncode,
                                   "stdout_tail": (proc.stdout or "")[-300:],
                                   "stderr_tail": (proc.stderr or "")[-200:]})
         if result is None:
+            # v2 兜底回拉（r5 教训：LLM 脚本只做探针/输出污染 stdout 时靠不住——
+            # job_id 是 harness 发的，结果路径完全确定，自己取回）
+            from harness.context import remote_workspace
+            rem = self._remote_cfg()
+            ws = remote_workspace(self.task.name, rem)
+            jpath = f"{ws}/results/{job['job_id']}.json"
+            cat = subprocess.run(["ssh", "-o", "BatchMode=yes",
+                                  rem.get("host", "yq-e15"), f"cat {jpath}"],
+                                 capture_output=True, text=True, timeout=120)
+            if cat.returncode == 0 and cat.stdout.strip():
+                try:
+                    result = json.loads(cat.stdout)
+                except json.JSONDecodeError:
+                    result = None
+            if result is None:
+                # LLM 脚本没跑 canonical（探针后即退）→ harness 补跑 canonical 出数
+                # （canonical 兜底职责：出数口径不能因为 LLM 偷懒而缺失）
+                fallback = self._canonical_exec(kind, jobs, candidate_id)
+                fb = subprocess.run(["bash", "-s"], input=fallback, capture_output=True,
+                                    text=True, timeout=700, cwd=str(REPO_ROOT))
+                self.ev.log_audit("harness", "exec-canonical-fallback",
+                                  target=candidate_id, round_=round_,
+                                  detail={"kind": kind, "rc": fb.returncode,
+                                          "stdout_tail": (fb.stdout or "")[-200:]})
+                for line in reversed((fb.stdout or "").splitlines()):
+                    line = line.strip()
+                    if line.startswith("{") and '"job_id"' in line:
+                        try:
+                            d = json.loads(line)
+                            if d.get("job_id") == job["job_id"]:
+                                result = d
+                                break
+                        except json.JSONDecodeError:
+                            continue
+        if result is None:
             return {"ok": False, "stage": "parse", "rc": proc.returncode,
-                    "error": f"results json 未在 stdout 中（rc={proc.returncode}）",
+                    "error": f"results json 未在 stdout/远端 results（rc={proc.returncode}）",
                     "stdout_tail": (proc.stdout or "")[-300:],
                     "stderr_tail": (proc.stderr or "")[-200:]}
         return {"ok": True, "result": result}
@@ -762,7 +789,9 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
         cur = self.st.require()
         start_round = int(cur.get("round") or 0) + 1   # 续跑从下一轮起（防轮号碰撞污染监督分组）
         if cur.get("terminal"):
-            self.st.update(terminal=None)     # 复活：续跑清终态
+            self.st.update(terminal=None)     # 复活：续跑清终态 + 熔断计数
+            self.st.update(stall_count=0, direction_fails={}, writer_fails=0,
+                           last_progress=None)   # 新战役段不继承旧熔断（r5 教训：带 stall=3 复活=秒死）
         state = self.st
         feedback = ""
         last = self.ev.load_solutions()
