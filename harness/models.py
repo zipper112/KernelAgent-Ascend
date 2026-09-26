@@ -54,12 +54,11 @@ class ModelsClient:
 
     def chat(self, role: str, messages: list[dict], temperature: float = 0.3,
              max_tokens: int | None = None, purpose: str = "",
-             thinking: str | None = "disabled") -> str:
+             thinking: str = "enabled") -> str:
         """角色调用：返回 assistant 文本。usage 记账（两级）；QuotaError 上抛。
-        max_tokens 缺省 = models.yaml 的 max_tokens_per_call（轮级上限，硬执行）。
-        thinking：GLM-5.3 是推理模型——不关思考时 16k 预算会被 reasoning_content
-        吃光（finish_reason=length 且 content 空，实测 2026-09-26）。循环自带
-        评审与迭代反馈，模型内部慢思考冗余 → 默认 disabled；需要时显式传 'enabled'。"""
+        thinking：GLM-5.3 推理模型思维链不可关（关=自废推理能力，用户裁定
+        2026-09-26）——默认 enabled，由 max_tokens 给思考+正文留足预算。
+        max_tokens 缺省 = models.yaml 上限档（用户裁定：开 max 档）。"""
         rc = self._role_cfg(role)
         cap = max_tokens or int(self._defaults.get("max_tokens_per_call", 8192))
         self._thinking = thinking
@@ -86,9 +85,9 @@ class ModelsClient:
         body = {"model": model, "messages": messages, "temperature": temperature}
         if max_tokens:
             body["max_tokens"] = max_tokens
-        th = getattr(self, "_thinking", "disabled")
-        if th == "disabled":
-            body["thinking"] = {"type": "disabled"}   # GLM 推理模型：不关则预算被思维链吃光
+        th = getattr(self, "_thinking", "enabled")
+        if th == "enabled":
+            body["thinking"] = {"type": "enabled"}    # GLM-5.3：思维链是能力本体（用户裁定）
         req = urllib.request.Request(
             base_url.rstrip("/") + "/chat/completions",
             data=json.dumps(body).encode(),

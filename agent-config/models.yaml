@@ -11,7 +11,7 @@ defaults:
   base_url: "https://open.bigmodel.cn/api/coding/paas/v4"
   timeout_s: 300
   max_retries: 2                         # 仅网络类错误重试；402/429 见 budget（绝不盲目重试烧钱）
-  max_tokens_per_call: 8192              # 轮级：单次回复上限
+  max_tokens_per_call: 65536              # 轮级：单次回复上限（max 档：思考+正文总预算，用户裁定思维链不可关）
   context_window: 250000                 # 上下文窗超参（用户上限）；compact.py 以 0.8x 为软压缩线
 
 # ---- 预算防护（Budget Guard，详见 docs/design/interaction-protocol.md §7）----

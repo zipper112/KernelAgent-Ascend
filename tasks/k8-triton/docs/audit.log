@@ -272,3 +272,4 @@
 {"ts": "2026-09-26T20:36:14", "actor": "harness", "action": "fuse-check", "target": "direction=unspecified", "round": 12, "detail": {"consecutive_fails": 7}}
 {"ts": "2026-09-26T20:36:14", "actor": "harness", "action": "fuse", "target": "direction=unspecified", "round": 12, "detail": {"reason": "3 consecutive fails", "action": "force-switch"}}
 {"ts": "2026-09-26T20:48:59", "actor": "harness", "action": "k8-triton-verdict", "target": "c003", "round": null, "detail": {"best_measured_us": 606.0, "vs_vec_baseline_pct": -44.7, "code_lost": "cid 复用覆盖（已修复）", "verdict": "inconclusive-but-promising；6 循环缺陷永久修复"}}
+{"ts": "2026-09-26T21:02:14", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "diag-thinking-on", "prompt_tokens": 50, "completion_tokens": 1223}}

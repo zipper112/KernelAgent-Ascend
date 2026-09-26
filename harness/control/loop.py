@@ -251,7 +251,7 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
 ===END===
 """
         raw = self.models.chat("writer", [{"role": "user", "content": prompt}],
-                               temperature=0.2, max_tokens=16384,
+                               temperature=0.2, max_tokens=None,
                                purpose=f"round{round_}-write")
         d = self._parse_candidate(raw)
         if d is None:
@@ -261,7 +261,7 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
                 [{"role": "user", "content": prompt},
                  {"role": "assistant", "content": raw[:12000]},
                  {"role": "user", "content": "输出不完整或格式不符。重新按分隔符协议输出完整候选（DIRECTION/HYPOTHESIS/KNOWLEDGE 三行 + ===CODE=== 块），250 行内。"}],
-                temperature=0.0, max_tokens=16384, purpose=f"round{round_}-write-retry")
+                temperature=0.0, max_tokens=None, purpose=f"round{round_}-write-retry")
             d = self._parse_candidate(raw2)
         if d is None or "code" not in d:
             # 解析失败不再炸循环：记审计 + 返回错误占位候选（本轮 review 判 REVISE，下轮带反馈重写）
@@ -280,7 +280,7 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
             raw3 = self.models.chat("writer",
                                     [{"role": "user", "content": prompt},
                                      {"role": "user", "content": fix_prompt}],
-                                    temperature=0.0, max_tokens=16384,
+                                    temperature=0.0, max_tokens=None,
                                     purpose=f"round{round_}-write-fix")
             d3 = self._parse_candidate_json(raw3)
             if d3 and "code" in d3:
