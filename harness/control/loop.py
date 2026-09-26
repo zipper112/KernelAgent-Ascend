@@ -151,6 +151,13 @@ class AutonomousLoop:
             compile(code, f"{cid}.py", "exec")
         except SyntaxError as e:
             return f"SyntaxError: {e}"
+        # 本地无 torch（jump ka 环境纯 harness）→ 降级纯语法检查：
+        # torch 语义验证交给远端 chained verify（e15 容器内 torch 完整）。
+        # 曾因强跑 CPU 桩（ModuleNotFoundError: torch）浪费 writer 12k token 修不存在的错。
+        try:
+            import torch  # noqa: F401
+        except ImportError:
+            return None
         has_triton = re.search(r"^\s*import triton|^\s*from triton", code, re.M)
         try:
             import types

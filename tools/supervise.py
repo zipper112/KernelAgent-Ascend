@@ -97,6 +97,31 @@ def check_round(evs: list[dict]) -> list[str]:
     return v
 
 
+def check_knowledge_use(evs: list[dict]) -> list[str]:
+    """知识利用审计（系统性 agent 的分水岭——不是普通 loop）：
+    ① skill 注入非空（router 没命中=盲区轮，另计）
+    ② writer 声明引用了知识（KNOWLEDGE 行）
+    ③ 引用与注入有交集（真用了这轮给的料，不是摆样子抄旧 id）
+    ④ 方向描述非泛化（拍脑门的方向名通常是 generic 词）。"""
+    v: list[str] = []
+    inj_ids = set()
+    for e in evs:
+        if e["action"] == "skill-inject":
+            inj_ids.update(e.get("detail", {}).get("ids", []))
+    cws = [e for e in evs if e["action"] == "candidate-write"]
+    for e in cws:
+        used = e.get("detail", {}).get("knowledge_used") or []
+        if not used:
+            v.append(f"KNOWLEDGE-UNUSED：{e.get('target')} 未引用任何知识（拍脑门迭代警告）")
+        elif inj_ids and not (set(map(str, used)) & inj_ids):
+            v.append(f"KNOWLEDGE-STALE：{e.get('target')} 引用 {used[:2]} 与本轮注入 "
+                     f"{sorted(inj_ids)[:3]} 无交集（未消化本轮材料）")
+    if not any(e["action"] == "skill-inject" and e.get("detail", {}).get("n", 0) > 0 for e in evs):
+        if not any(e["action"] == "blindspot" for e in evs):
+            v.append("NO-SKILL-INPUT：全程无 skill 注入且无盲区声明")
+    return v
+
+
 def check_dag(task: Path) -> list[str]:
     """P0-2：候选 DAG 完整性——非根候选 parent 必须指向存在的 cid。"""
     v: list[str] = []
@@ -164,7 +189,7 @@ def main() -> int:
             by_round[1] = pending
     all_ok = True
     for r in rounds:
-        viol = check_round(by_round[r])
+        viol = check_round(by_round[r]) + check_knowledge_use(by_round[r])
         seq = " → ".join(e["action"] for e in by_round[r])
         status = "OK " if not viol else "VIOLATION"
         print(f"[{status}] round {r}: {seq[:200]}")

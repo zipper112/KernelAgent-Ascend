@@ -12,6 +12,9 @@ _PROTECTED_FILES = ("benchmark.csv", "solutions.jsonl", "audit.log",
                     "reference.py", "workloads.yaml", "runner.py",
                     "container_entry.sh", "job.json")
 
+# shell 选项行（LLM 好习惯：set -e/-u/-o pipefail）——放行
+_SHELL_OPTS = re.compile(r"^set\s+-[a-zA-Z]+\b|^set\s+-o\s+(pipefail|errexit)\b|^export\s+[A-Z_]+=")
+
 # 允许的命令首词（远端操作面 + 同步 + 探针；本地操作只许只读）
 _ALLOWED_FIRST = re.compile(
     r"^(ssh|scp|rsync|tar|cat|echo|mkdir|ls|grep|sed|npu-smi|nvidia-smi|python[0-9.]*|"
@@ -38,7 +41,7 @@ def check_exec_block(script: str) -> tuple[bool, str | None]:
     """检查 EXEC 块全文（逐逻辑行）。返回 (ok, reason)；ok=False 时 reason 指向首个违规行。"""
     for raw in script.splitlines():
         line = raw.strip()
-        if not line or line.startswith("#"):
+        if not line or line.startswith("#") or _SHELL_OPTS.match(line):
             continue
         for pat, name in _FORBIDDEN_PATTERNS:
             if pat.search(line):
