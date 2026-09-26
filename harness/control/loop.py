@@ -634,6 +634,18 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
                                   detail={"kind": kind, "rc": fb.returncode,
                                           "stdout_tail": (fb.stdout or "")[-200:]})
                 result = self._extract_result_json(fb.stdout or "", job["job_id"])
+                if result is None:
+                    # r11 教训：fallback docker 已把 results 写到远端，但 runner 进程的
+                    # stdout 只打 {"done": true}（json 落盘不打屏）——fallback 后必须
+                    # 再 cat 一次远端 results（此刻文件必然已在）
+                    cat2 = subprocess.run(["ssh", "-o", "BatchMode=yes",
+                                           rem.get("host", "yq-e15"), f"cat {jpath}"],
+                                          capture_output=True, text=True, timeout=120)
+                    if cat2.returncode == 0 and cat2.stdout.strip():
+                        try:
+                            result = json.loads(cat2.stdout)
+                        except json.JSONDecodeError:
+                            result = None
         if result is None:
             return {"ok": False, "stage": "parse", "rc": proc.returncode,
                     "error": f"results json 未在 stdout/远端 results（rc={proc.returncode}）",
