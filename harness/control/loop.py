@@ -879,14 +879,17 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
                                                 direction=direction,
                                                 hypothesis=str(cand.get("hypothesis", ""))[:200],
                                                 status="verified", round_=round_, stage="verify")
-                    elif not _ipd(direction):
+                    else:
+                        # r15 教训：伪方向也落 reject 行（账本完整，review 回写有锚点）；
+                        # 计数仍然豁免（伪方向走 writer_fails 通道）
                         self.ev.append_solution(cand["cid"], parent_id=cand.get("parent"),
                                                 direction=direction,
                                                 hypothesis=str(cand.get("hypothesis", ""))[:200],
                                                 status="reject", round_=round_, stage="verify")
-                        n = self.st.bump_direction_fail(str(direction)[:40])
-                        self.ev.log_audit("harness", "fuse-check", target=f"direction={direction[:40]}",
-                                          round_=round_, detail={"consecutive_fails": n})
+                        if not _ipd(direction):
+                            n = self.st.bump_direction_fail(str(direction)[:40])
+                            self.ev.log_audit("harness", "fuse-check", target=f"direction={direction[:40]}",
+                                              round_=round_, detail={"consecutive_fails": n})
                     self.ev.log_audit("harness", "verify-step", target=cand["cid"], round_=round_,
                                       detail={"passed": vr.get("passed"),
                                               "err_ratio": [w.get("err_ratio") for w in vr.get("workloads", [])][:5],
@@ -917,7 +920,9 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
                 verdict = self.review(round_, cand["cid"], vr, br)
                 self.st.update(last_verdict=verdict)
                 # P0-1：评审终判回写账本（verdict 不再恒 keep——账本=真实状态）
-                if not cand.get("parse_failed"):
+                # r15 教训：伪方向轮 verify 跳过落账 → record_review 断言炸循环。
+                # 伪方向不回写（writer_fails 通道管）
+                if not cand.get("parse_failed") and not is_pseudo_direction(cand.get("direction")):
                     v_final = "keep" if verdict == "COMPLETE" else verdict.lower()
                     self.ev.record_review(cand["cid"], v_final,
                                           note=(self._last_review_text or "")[-200:],
