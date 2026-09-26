@@ -253,6 +253,8 @@ def main() -> int:
     result = {"job_id": job["job_id"], "kind": job["kind"], "candidate_id": job["candidate_id"],
               "device_id": job.get("device_id", 0),
               "physical_device_id": job.get("physical_device_id", job.get("device_id", 0))}
+    # 兜底必须覆盖 BaseException（r9 实战：LLM 候选的防御分支 sys.exit()/os._exit 路径
+    # 抛 SystemExit——except Exception 接不住，runner 直接蒸发，results json 不落盘）
     try:
         if job["kind"] == "verify":
             result.update(run_verify(payload, job))
@@ -260,8 +262,10 @@ def main() -> int:
             result.update(run_bench(payload, job))
         else:
             result = {**result, "ok": False, "error": "profile: Phase 2"}
-    except Exception as e:  # noqa: BLE001
-        result = {**result, "ok": False, "error": f"{type(e).__name__}: {e}"}
+    except SystemExit as e:
+        result = {**result, "passed": False, "error": f"SystemExit({e}): 候选调用了 exit/quit——防御分支误触发或主动放弃"}
+    except BaseException as e:  # noqa: BLE001 —— 结果文件必须落盘（契约：任何路径都有 results）
+        result = {**result, "ok": False, "error": f"{type(e).__name__}: {e}"[:500]}
     result["elapsed_s"] = round(time.time() - t0, 2)
 
     out = Path(args.results_dir)

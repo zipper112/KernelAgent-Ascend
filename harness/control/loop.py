@@ -852,6 +852,13 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
                     vr = res if res.get("passed") is not None else \
                         {"passed": False, "workloads": res.get("workloads", []),
                          "error": res.get("error", "exec-failed")}
+                    # 错误回流（r9 教训：真实失败文本必须进记忆层——否则 writer 下轮
+                    # 只知道"没过"不知道"为什么"，无法定向修复）
+                    err_tail = str(res.get("error") or "")[:200]
+                    if not err_tail or err_tail == "exec-failed":
+                        err_tail = str(res.get("stdout_tail") or "")[:200]
+                    vr.setdefault("error", err_tail)
+                    vr["error_detail"] = err_tail
                     # verify 结果也进 solutions.jsonl（CLI 落账逻辑内联——keep P0-1 语义）
                     from harness.core.state import is_pseudo_direction as _ipd
                     direction = cand.get("direction") or "unknown"
@@ -909,9 +916,10 @@ B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向
                 # 记忆层轮末存档（Humanize 存续：下轮注入全文而非摘要）
                 self.mem.save_round(round_, {
                     "direction": cand.get("direction"), "hypothesis": cand.get("hypothesis"),
-                    "verify": {"passed": vr.get("passed"),
-                               "err_ratio": [w.get("err_ratio") for w in vr.get("workloads", [])][:3],
-                               "error": str((vr.get("workloads") or [{}])[0].get("error", ""))[:150]},
+                "verify": {"passed": vr.get("passed"),
+                           "err_ratio": [w.get("err_ratio") for w in vr.get("workloads", [])][:3],
+                           "error": str(vr.get("error_detail")
+                                        or (vr.get("workloads") or [{}])[0].get("error", ""))[:200]},
                     "bench": {k: (br or {}).get(k) for k in ("mean_us", "p50_us", "p99_us", "speedup")},
                     "review_text": self._last_review_text,
                     "code": cand.get("code", ""),
