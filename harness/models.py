@@ -75,6 +75,13 @@ class ModelsClient:
                     raise                      # 402/429：不重试不换档，直接上抛 checkpoint
                 except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
                     last_err = e
+                    # 重试可见性（r6 教训：300s×6 的慢重试若无审计=看不见的挂死）
+                    try:
+                        self.ev.log_audit("harness", "llm-retry", target=f"{role}:{model}",
+                                          detail={"purpose": purpose, "attempt": retry + 1,
+                                                  "err": f"{type(e).__name__}: {str(e)[:80]}"})
+                    except Exception:   # noqa: BLE001 —— 审计失败不阻断重试
+                        pass
                     if retry < max_retries:
                         time.sleep(2 * (retry + 1))
             # 本档重试耗尽 → 换 fallback 档（auto_rules ③）
