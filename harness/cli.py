@@ -175,9 +175,32 @@ def _device_contention(task_root: Path, ev, state: dict, device_id: int) -> dict
         return None
 
 
+def _filter_workloads(task_root: Path, wls: list[dict], workload_set: str) -> list[dict]:
+    """P1-1 workload 双档：task.yaml contract.workload_sets.dev = [行id]（开发集）；
+    l0=dev 子集（未定义时取前 2 行——快速迭代档）；l1/full=全量（验收档）。"""
+    if workload_set in ("l1", "full"):
+        return wls
+    if workload_set == "l0":
+        try:
+            import yaml as _y
+            cfg = _y.safe_load((task_root / "task.yaml").read_text(encoding="utf-8"))
+            dev_ids = (cfg.get("contract", {}).get("workload_sets", {}) or {}).get("dev")
+        except Exception:   # noqa: BLE001 —— task.yaml 缺失/畸形走默认
+            dev_ids = None
+        if isinstance(dev_ids, list) and dev_ids:
+            keep = set(str(x) for x in dev_ids)
+            filt = [w for w in wls if str(w.get("id")) in keep]
+            if filt:
+                return filt
+        return wls[:2]
+    return wls
+
+
 def _run_remote_job(task_root: Path, state: dict, kind: str, candidate_id: str,
                     workload_set: str, ev: Evidence) -> dict:
-    """verify/bench 公共：JobSpec 组装（含 payload 必备件）→ run_job → evidence 落盘。"""
+    """verify/bench 公共：JobSpec 组装（含 payload 必备件）→ run_job → evidence 落盘。
+    P1-6：audit 记 reference.py/workloads.yaml 的 sha256 前 8 位（证据防篡改溯源）。"""
+    import hashlib
     import yaml
     from infra.remote.executor import RemoteTarget
     from infra.remote.sync import JobSpec, run_job
@@ -187,9 +210,9 @@ def _run_remote_job(task_root: Path, state: dict, kind: str, candidate_id: str,
     if not rem.get("enabled", False):
         return {"error": "remote-disabled（本地执行模式批 C 实装）"}
     wls_data = yaml.safe_load((task_root / "bench" / "workloads.yaml").read_text(encoding="utf-8"))
-    # workload 透传完整定义（含多张量 inputs spec；dtype 缺省补 fp16）
+    # workload 透传完整定义（含多张量 inputs spec；dtype 缺省补 fp16）；P1-1：按档过滤
     wls = []
-    for w in wls_data["workloads"]:
+    for w in _filter_workloads(task_root, wls_data["workloads"], workload_set):
         item = {"id": w["id"], "axes": w["axes"], "dtype": w.get("dtype", "fp16")}
         if "inputs" in w:
             item["inputs"] = w["inputs"]
@@ -199,15 +222,34 @@ def _run_remote_job(task_root: Path, state: dict, kind: str, candidate_id: str,
     for extra in ("reference.py", "bench/workloads.yaml"):   # §8b：workload 定义必达（v0.2 修复：漏推致远端读旧残留）
         if (task_root / extra).exists():
             files.append(extra)
+    # P1-2：链式终态门透传（task.yaml contract.verify_mode: chained + chain_steps）
+    try:
+        tcfg = yaml.safe_load((task_root / "task.yaml").read_text(encoding="utf-8"))
+        vm = (tcfg.get("contract", {}) or {}).get("verify_mode")
+    except Exception:   # noqa: BLE001
+        vm = None
+    extra_job = {"warmup": meas.get("warmup", 3), "samples": meas.get("samples", 5)}
+    if vm == "chained":
+        extra_job["verify_mode"] = "chained"
+        extra_job["chain_steps"] = int((tcfg.get("contract", {}) or {}).get("chain_steps", 3))
+    # P1-6：payload 溯源指纹
+    shas = {}
+    for f in ("reference.py", "bench/workloads.yaml"):
+        p = task_root / f
+        if p.exists():
+            shas[f] = hashlib.sha256(p.read_bytes()).hexdigest()[:8]
     spec = JobSpec(job_id=f"{state['task']}-{kind}-{candidate_id}-{int(time.time())}",
                    kind=kind, candidate_id=candidate_id, task=state["task"],
                    files=files, workloads=wls, workload_set=workload_set,
                    timeout_s=600, device_id=rem.get("device_id", 0),
-                   extra={"warmup": meas.get("warmup", 3), "samples": meas.get("samples", 5)})
+                   extra=extra_job)
     target = RemoteTarget(jump=rem.get("jump", "jump"), host=rem.get("host", "yq-e15"),
                           exec_mode=rem.get("exec_mode", "docker"),
                           docker_image=rem.get("docker_image", ""),
                           cann_env=rem.get("cann_env", ""))
+    ev.log_audit("harness", f"job-spec-{kind}", target=candidate_id, round_=state.get("round"),
+                 detail={"workload_set": workload_set, "n_workloads": len(wls), "shas": shas,
+                         **({"verify_mode": extra_job["verify_mode"]} if vm == "chained" else {})})
     return run_job(target, spec, rem.get("mirror_root", "~/kda-ascend"),
                    "infra/remote/runner.py", task_root, task_root / "results",
                    repo_root=REPO_ROOT)

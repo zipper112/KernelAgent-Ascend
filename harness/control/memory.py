@@ -44,6 +44,24 @@ class IterationMemory:
         r = rounds[-1]
         return r, self.load_round(r)
 
+    def trend_digest(self, n: int = 3) -> str:
+        """P1-4 近 N 轮趋势表（direction × mean_us × verdict 一行一轮）——
+        writer 一眼看出"哪个方向在收敛、哪个在原地打转"；全量明细仍在证据账本。"""
+        rounds = sorted((int(m.group(1)) for m in
+                         (re.match(r"round-(\d+)\.json", p.name) for p in self.dir.glob("round-*.json"))
+                         if m))
+        if not rounds:
+            return "（尚无轮档案）"
+        lines = []
+        for r in rounds[-n:]:
+            rec = self.load_round(r) or {}
+            b = rec.get("bench") or {}
+            mean = b.get("mean_us")
+            lines.append(f"- round {r}: dir={rec.get('direction')} "
+                         f"mean={f'{mean:.0f}us' if mean else 'N/A'} "
+                         f"verify={'过' if (rec.get('verify') or {}).get('passed') else '挂'}")
+        return "\n".join(lines)
+
     # ---------- 证据账本（KDA：数值级证据驱动假设） ----------
 
     def evidence_digest(self, best_us: float | None) -> str:
@@ -76,9 +94,12 @@ class IterationMemory:
         (self.dir / "lessons.json").write_text(
             json.dumps(self.lessons, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    def lessons_digest(self, n: int = 6) -> str:
-        """最近 n 条经验进 writer prompt（失败教训优先呈现）。"""
+    def lessons_digest(self, n: int = 5) -> str:
+        """P1-7 选课注入（Humanize bitlesson-selector 的规则版）：win 优先 + 时间近者优先，
+        cap n 条替代全量（防经验库膨胀淹没 prompt）。"""
         if not self.lessons:
             return "（尚无沉淀经验）"
-        items = self.lessons[-n:]
-        return "\n".join(f"- [r{l['round']}{l['kind']}] {l['text']}" for l in items)
+        ranked = sorted(self.lessons,
+                        key=lambda l: (l.get("kind") == "win", l.get("round", 0)),
+                        reverse=True)[:n]
+        return "\n".join(f"- [r{l['round']}{l['kind']}] {l['text']}" for l in ranked)

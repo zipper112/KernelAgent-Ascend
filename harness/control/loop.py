@@ -429,8 +429,9 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
             code = str(rec.get('code', ''))
             if code:
                 parts.append(f"- 上轮代码（可增量修改，勿从零重写）:\n```\n{code[:4000]}\n```")
+        parts.append(f"### 近 3 轮趋势（方向×耗时×结果）\n{self.mem.trend_digest(3)}")
         parts.append(f"### bench 证据账本\n{self.mem.evidence_digest(self._best_baseline_us())}")
-        parts.append(f"### 沉淀经验（BitLesson——失败教训优先吸取）\n{self.mem.lessons_digest()}")
+        parts.append(f"### 沉淀经验（BitLesson——win 优先，最多 5 条）\n{self.mem.lessons_digest()}")
         return "\n\n".join(parts)
 
     def _candidates_summary(self) -> str:
@@ -441,9 +442,9 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
 
     # ---------- 阶段 3/4：VERIFY / BENCH（复用 CLI 内部逻辑） ----------
 
-    def _run_cli(self, fn_name: str, cid: str) -> tuple[int, dict]:
+    def _run_cli(self, fn_name: str, cid: str, workload_set: str = "l0") -> tuple[int, dict]:
         import harness.cli as cli
-        args = argparse.Namespace(task=str(self.task), candidate=cid, workload_set="l0")
+        args = argparse.Namespace(task=str(self.task), candidate=cid, workload_set=workload_set)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             rc = getattr(cli, f"cmd_{fn_name}")(args)
@@ -455,14 +456,18 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
     def verify(self, round_: int, cid: str) -> dict:
         rc, out = self._run_cli("verify", cid)
         self.ev.log_audit("harness", "verify-step", target=cid, round_=round_,
-                          detail={"rc": rc, "passed": out.get("passed")})
+                          detail={"rc": rc, "passed": out.get("passed"),
+                                  "mode": out.get("verify_mode")})
         return out
 
-    def bench(self, round_: int, cid: str) -> dict:
-        rc, out = self._run_cli("bench", cid)
+    def bench(self, round_: int, cid: str, workload_set: str = "l0") -> dict:
+        """P1-1：默认 dev 档（l0）快速迭代；review 判 COMPLETE 前用 full 档复核
+        （防单形状过拟合——比赛 8 代表行/19 验收行的分层评测机制）。"""
+        rc, out = self._run_cli("bench", cid, workload_set)
         self.ev.log_audit("harness", "bench-step", target=cid, round_=round_,
                           detail={"rc": rc, "mean_us": out.get("mean_us"),
-                                  "speedup": out.get("speedup")})
+                                  "speedup": out.get("speedup"),
+                                  "workload_set": workload_set})
         return out
 
     # ---------- 阶段 5：REVIEW ----------
@@ -493,8 +498,20 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
 
     def review(self, round_: int, cid: str, vr: dict, br: dict | None) -> str:
         """P0-8：注入完整 gate 评审契约（弃 1500 字符截断——简化契约=评审质量塌陷源）。
-        契约要点内联在 prompt 头部；模板正文全文注入。"""
+        P1-5：每 5 轮对齐轮（round%5==0）——评审权扩至停滞检测（可判 STOP）+
+        历史全轮趋势注入（Humanize full-alignment-review 机制）。"""
         template = (REPO_ROOT / "knowledge" / "prompts" / "gate-review.md").read_text(encoding="utf-8")
+        alignment = (round_ % 5 == 0)
+        align_block = ""
+        if alignment:
+            align_block = f"""
+## 全量对齐审计（本轮 round {round_} = 5 的倍数）
+除常规评审外你还必须：
+A. 对比近几轮趋势（下表）——同一方向是否多轮无实质进展？同一问题是否反复出现？
+B. 若判定停滞：末行输出 STOP（附 bench 表/具名瓶颈/已试方向清单三要素）。
+### 近轮趋势
+{self.mem.trend_digest(5)}
+"""
         best_us = self._best_baseline_us()
         cur_us = (br or {}).get("mean_us") if (br or {}).get("valid", True) else None
         beat = None
@@ -503,6 +520,7 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         prompt = f"""你是 gate 评审（只读；证据驱动）。以下是完整评审契约与模板，逐条遵守：
 
 {template}
+{align_block}
 
 ## 本轮证据（你的裁决只认这些，不认 agent 声明）
 - 候选：{cid}（direction 见 solutions.jsonl 本轮行）
@@ -528,7 +546,8 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         self._last_review_text = raw          # 记忆层存档用（评审原文进下轮 prompt）
         self.ev.log_audit("gate", "review", target=f"round-{round_}", round_=round_,
                           detail={"tail": raw.strip().splitlines()[-1][:80] if raw.strip() else "",
-                                  "best_us": best_us, "cur_us": cur_us, "beat_pct": beat})
+                                  "best_us": best_us, "cur_us": cur_us, "beat_pct": beat,
+                                  **({"alignment": True} if alignment else {})})
         last = raw.strip().splitlines()[-1].strip().upper() if raw.strip() else ""
         for v in ("COMPLETE", "REVISE", "REJECT", "STOP"):
             if last == v or last.startswith(v):
@@ -691,9 +710,25 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
                     self.ev.log_audit("harness", "replan-inject", round_=round_,
                                       detail={"trigger": "stall_count=2"})
                 if verdict in ("COMPLETE", "STOP"):
-                    self.st.update(terminal=verdict)
-                    print(f"[loop] 终局：{verdict}", flush=True)
-                    return 0
+                    # P1-1：COMPLETE 前 full 档复核（dev 集夺冠不算数——防单形状过拟合）
+                    if verdict == "COMPLETE" and br and br.get("valid"):
+                        print(f"[loop] round {round_} FULL-SET REBENCH...", flush=True)
+                        br_full = self.bench(round_, cand["cid"], workload_set="full")
+                        if not br_full.get("valid") or \
+                           (best_before := self._best_baseline_us()) and br_full.get("mean_us") \
+                           and br_full["mean_us"] >= best_before:
+                            verdict = "REVISE"
+                            self.ev.log_audit("harness", "full-rebench-downgrade",
+                                              target=cand["cid"], round_=round_,
+                                              detail={"full_mean_us": br_full.get("mean_us"),
+                                                      "best_before": best_before})
+                            feedback = (f"REVISE: full 档复核未达标（full mean="
+                                        f"{br_full.get('mean_us')} vs 最优 {best_before}）"
+                                        f"——dev 集结果不可外推，修全形状泛化")
+                    if verdict in ("COMPLETE", "STOP"):
+                        self.st.update(terminal=verdict)
+                        print(f"[loop] 终局：{verdict}", flush=True)
+                        return 0
                 if verdict == "COMPLETE":
                     subprocess.run(["git", "add", "-A"], cwd=REPO_ROOT, capture_output=True)
                     subprocess.run(["git", "commit", "-m",

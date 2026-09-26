@@ -94,15 +94,26 @@ def make_inputs(workload: dict, torch):
     return [inp]
 
 
+def _tensor_sig(t) -> float:
+    """状态突变检测用的轻量和校验（runner 内部；fp32 累加容差内可辨"变了没有"）。"""
+    return float(t.float().abs().sum().item())
+
+
 def run_verify(payload: Path, job: dict) -> dict:
     import torch
     import torch_npu  # noqa: F401
     torch.npu.set_device(job.get("device_id", 0))
     mod = load_kernel(payload, job.get("candidate_id", "c001"))
     ref_fn = load_reference(payload)
+    chained = job.get("extra", {}).get("verify_mode") == "chained"
+    steps = int(job.get("extra", {}).get("chain_steps", 3))
     per_wl = []
     for wl in job["workloads"]:
         inputs = make_inputs(wl, torch)
+        tol = TOL.get(wl.get("dtype", "fp16"), 0.02)
+        if chained:
+            per_wl.append(_verify_chained(mod, ref_fn, inputs, wl["id"], tol, torch, steps))
+            continue
         # 参考输出先算（fp32 oracle 独立于候选，防候选原地改输入污染参考）
         ref = ref_fn(list(inputs))
         ref = ref[0] if isinstance(ref, (list, tuple)) else ref
@@ -113,10 +124,44 @@ def run_verify(payload: Path, job: dict) -> dict:
             per_wl.append({"id": wl["id"], "passed": False, "error": str(e)[:200]})
             continue
         # 四步协议
-        ok, detail = compare(out.float(), ref.float(), TOL.get(wl.get("dtype", "fp16"), 0.02))
+        ok, detail = compare(out.float(), ref.float(), tol)
         per_wl.append({"id": wl["id"], "passed": ok, **detail})
     passed = all(w.get("passed") for w in per_wl)
-    return {"passed": passed, "workloads": per_wl}
+    return {"passed": passed, "workloads": per_wl, "verify_mode": "chained" if chained else "single"}
+
+
+def _verify_chained(mod, ref_fn, inputs: list, wl_id: str, tol: float, torch, steps: int) -> dict:
+    """P1-2 链式终态门（KDA-Pilot 门 1）：状态携带 kernel 重放 N 连步（每步的 state 原地
+    演进喂下一步），比对 ①每步输出序列 ②终态（被原地更新的输入张量）。
+    单步 per-step 容差看不到 state 漂移——replay-SSM 实证翻车模式。"""
+    ins_c = [t.clone() for t in inputs]      # 两臂各自独立 state
+    ins_r = [t.clone() for t in inputs]
+    sig0 = [_tensor_sig(t) for t in inputs]
+    outs_c, outs_r = [], []
+    try:
+        for _ in range(steps):
+            o = mod.kernel(list(ins_c))
+            outs_c.append(o[0] if isinstance(o, (list, tuple)) else o)
+        for _ in range(steps):
+            o = ref_fn(list(ins_r))
+            outs_r.append(o[0] if isinstance(o, (list, tuple)) else o)
+    except Exception as e:  # noqa: BLE001
+        return {"id": wl_id, "passed": False, "error": str(e)[:200]}
+    # ① 逐步输出
+    for k, (oc, orr) in enumerate(zip(outs_c, outs_r)):
+        ok, detail = compare(oc.float(), orr.float(), tol)
+        if not ok:
+            return {"id": wl_id, "passed": False, "step": k, "gate": "output", **detail}
+    # ② 终态：任一臂发生突变的输入张量视为 state，比对两臂终值
+    state_inputs = []
+    for j, (tc, tr) in enumerate(zip(ins_c, ins_r)):
+        if abs(_tensor_sig(tc) - sig0[j]) > 1e-3 or abs(_tensor_sig(tr) - sig0[j]) > 1e-3:
+            state_inputs.append(j)
+            ok, detail = compare(tc.float(), tr.float(), tol)
+            if not ok:
+                return {"id": wl_id, "passed": False, "input_idx": j,
+                        "gate": "final-state", **detail}
+    return {"id": wl_id, "passed": True, "steps": steps, "state_inputs": state_inputs}
 
 
 def compare(out, ref, limit: float):
@@ -170,10 +215,23 @@ def run_bench(payload: Path, job: dict) -> dict:
     per_wl = []
     for wl in job["workloads"]:
         inputs = make_inputs(wl, torch)
+        entry = {"id": wl["id"]}
+        # P1-3 参考可信性：baseline 同输入跑 3 次自一致（KDA-Pilot 门 0）——
+        # 不稳行的 speedup_vs_ref 无意义，标 ref_unstable 供 keep 判定剔除
+        if has_ref:
+            try:
+                # 每次探针从克隆输入起跑（reference 可能原地演进 state——
+                # 同一输入连跑 3 次会天然不同，那不是"不稳定"）
+                probes = [ref_fn([t.clone() for t in inputs]) for _ in range(3)]
+                probes = [p[0] if isinstance(p, (list, tuple)) else p for p in probes]
+                stable = all(compare(probes[0].float(), p.float(), 1e-3)[0] for p in probes[1:])
+                entry["ref_unstable"] = not stable
+            except Exception:   # noqa: BLE001 —— 探针失败不阻塞计时
+                entry["ref_unstable"] = None
         ts = _time_fn(mod.kernel, inputs, torch, l2buf, warmup, samples)
-        entry = {"id": wl["id"], "mean_us": sum(ts) / len(ts), "p50_us": ts[len(ts)//2],
-                 "p99_us": ts[max(0, (len(ts) * 99 + 99) // 100 - 1)],   # 协议 §1 bench 输出含 p99
-                 "times": ts}
+        entry.update({"mean_us": sum(ts) / len(ts), "p50_us": ts[len(ts)//2],
+                      "p99_us": ts[max(0, (len(ts) * 99 + 99) // 100 - 1)],   # 协议 §1 bench 输出含 p99
+                      "times": ts})
         if has_ref:
             rb = _time_fn(ref_fn, inputs, torch, l2buf, warmup, samples)
             entry["baseline_mean_us"] = sum(rb) / len(rb)

@@ -18,6 +18,13 @@ contract:
   allowed:
     dsl: [triton-ascend]
     forbidden: ["禁 .item()/.cpu()", "禁 torch unfold/einsum 中间物化（本任务的存在理由）"]
+  # P1-2：conv_state 原地演进=状态携带算子 → verify 走链式终态门（3 连步，比终态）
+  verify_mode: chained
+  chain_steps: 3
+  # P1-1：dev 集快速迭代档（l0）；full=全部行（keep 复核）
+  workload_sets:
+    dev: [w02]
+    full: [w01, w02, w03]
   validation_cmd: "python -m harness.cli verify --task k8-triton --candidate <cid>"
   evaluation_cmd: "python -m harness.cli bench --task k8-triton --candidate <cid>"
   promotion: "≥1.8x 且 verify 过 → E067 交付候选（补 causal_conv1d_update_npu 符号）"
