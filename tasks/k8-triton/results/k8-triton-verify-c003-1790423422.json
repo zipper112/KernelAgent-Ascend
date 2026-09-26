@@ -1,0 +1,28 @@
+{
+ "job_id": "k8-triton-verify-c003-1790423422",
+ "kind": "verify",
+ "candidate_id": "c003",
+ "device_id": 0,
+ "physical_device_id": 7,
+ "passed": false,
+ "workloads": [
+  {
+   "id": "w01",
+   "passed": false,
+   "error": "\n///------------------[ERROR][Triton][BEG]------------------\n[ConvertLinalgRToBinary] encounters error:\n// -----// IR Dump After PlanMemory Failed (hivm-plan-memory) //----- //\nfunc.func @_causal_conv"
+  },
+  {
+   "id": "w02",
+   "passed": false,
+   "error": "\n///------------------[ERROR][Triton][BEG]------------------\n[ConvertLinalgRToBinary] encounters error:\n// -----// IR Dump After PlanMemory Failed (hivm-plan-memory) //----- //\nfunc.func @_causal_conv"
+  },
+  {
+   "id": "w03",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.03,
+   "mismatches": []
+  }
+ ],
+ "elapsed_s": 35.55
+}

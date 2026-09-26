@@ -2,18 +2,27 @@
  "schema": 1,
  "task": "k8-triton",
  "mode": "companion",
- "round": 6,
+ "round": 9,
  "best": null,
  "direction_fails": {
   "parse-failed": 8,
   "fused-single-launch rolling-window（寄存器滑窗": 1,
   "depthwise-conv1d-fused-window": 1,
-  "persistent40-regwindow-branchless": 1
+  "persistent40-regwindow-branchless": 2,
+  "fused-single-launch rolling-window-v2": 2,
+  "fused-single-launch regwindow-block512": 2,
+  "single-launch-static-window-silu": 2,
+  "unspecified": 2,
+  "fused-single-launch-sliding-state-triton": 2,
+  "persistent40-regwindow-branchless-v2": 1,
+  "groups-d-conv1d-dispatch-fold": 1,
+  "persistent40-regwindow-padmask-v3": 1,
+  "persist40-flat-tile-regwindow-padmask": 1
  },
  "stall_count": 0,
  "last_verdict": "REVISE",
  "pause": null,
- "terminal": null,
+ "terminal": "MAXITER",
  "phase": "P1",
- "updated_at": "2026-09-26T19:49:38"
+ "updated_at": "2026-09-26T20:22:23"
 }

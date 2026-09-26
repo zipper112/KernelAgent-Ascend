@@ -1,0 +1,26 @@
+{
+ "job_id": "k8-triton-verify-c003-1790423640",
+ "kind": "verify",
+ "candidate_id": "c003",
+ "device_id": 0,
+ "physical_device_id": 7,
+ "passed": false,
+ "workloads": [
+  {
+   "id": "w01",
+   "passed": false,
+   "error": "at 21:9:\n):\n    pid_h = tl.program_id(0)\n    pid_b = tl.program_id(1)\n\n    row = tl.load(idx_ptr + pid_b * stride_ib)  # 原始 batch 行号（gather）\n\n    offs_h = pid_h * BLOCK_H + tl.arange(0, BLOCK_H)\n    m"
+  },
+  {
+   "id": "w02",
+   "passed": false,
+   "error": "at 21:9:\n):\n    pid_h = tl.program_id(0)\n    pid_b = tl.program_id(1)\n\n    row = tl.load(idx_ptr + pid_b * stride_ib)  # 原始 batch 行号（gather）\n\n    offs_h = pid_h * BLOCK_H + tl.arange(0, BLOCK_H)\n    m"
+  },
+  {
+   "id": "w03",
+   "passed": false,
+   "error": "at 21:9:\n):\n    pid_h = tl.program_id(0)\n    pid_b = tl.program_id(1)\n\n    row = tl.load(idx_ptr + pid_b * stride_ib)  # 原始 batch 行号（gather）\n\n    offs_h = pid_h * BLOCK_H + tl.arange(0, BLOCK_H)\n    m"
+  }
+ ],
+ "elapsed_s": 27.06
+}

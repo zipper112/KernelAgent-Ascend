@@ -1,0 +1,10 @@
+{
+ "job_id": "k8-triton-verify-c003-1790423504",
+ "kind": "verify",
+ "candidate_id": "c003",
+ "device_id": 0,
+ "physical_device_id": 7,
+ "ok": false,
+ "error": "SyntaxError: positional argument follows keyword argument (candidate.py, line 28)",
+ "elapsed_s": 9.28
+}

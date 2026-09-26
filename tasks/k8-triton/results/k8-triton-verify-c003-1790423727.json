@@ -1,0 +1,32 @@
+{
+ "job_id": "k8-triton-verify-c003-1790423727",
+ "kind": "verify",
+ "candidate_id": "c003",
+ "device_id": 0,
+ "physical_device_id": 7,
+ "passed": true,
+ "workloads": [
+  {
+   "id": "w01",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.03,
+   "mismatches": []
+  },
+  {
+   "id": "w02",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.03,
+   "mismatches": []
+  },
+  {
+   "id": "w03",
+   "passed": true,
+   "err_ratio": 0.0,
+   "limit": 0.03,
+   "mismatches": []
+  }
+ ],
+ "elapsed_s": 49.69
+}

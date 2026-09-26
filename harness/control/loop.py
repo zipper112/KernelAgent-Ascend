@@ -194,10 +194,15 @@ class AutonomousLoop:
     def write_candidate(self, round_: int, research: dict, feedback: str) -> dict:
         prev = self._candidates_summary()
         cid = f"c{len(self.ev.load_solutions()) + 1:03d}"
-        # 同一方向的 revise 复用 id（协议候选 id 规则）：feedback 是 revise 时取当前 id
+        # 同向 refine 复用 id（协议候选 id 规则）；**换向必须新开 id**——否则新方向
+        # 覆盖旧目录，最优版本丢失（K8-Triton 实战：606us 版被后续换向轮覆盖）。
         if feedback.startswith("REVISE:"):
             sols = self.ev.load_solutions()
-            cid = sols[-1]["candidate_id"] if sols else cid
+            last_dir = str(sols[-1].get("direction", ""))[:40] if sols else ""
+            # feedback 里带方向名（writer 拿到的 FUSE/REVISE 文本含旧方向）时对比；
+            # 无法判断时保守开新 id（宁可多目录不丢版本）
+            if last_dir and last_dir in feedback:
+                cid = sols[-1]["candidate_id"]
         skills_txt = "\n\n".join(
             f"### skill {s['id']}（{s['skill']}）\n{s['excerpt']}" for s in research["skills"]) or "（router 未命中）"
         import yaml as _y
