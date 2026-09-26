@@ -230,3 +230,45 @@
 {"ts": "2026-09-26T20:22:23", "actor": "harness", "action": "fuse-check", "target": "direction=persist40-flat-tile-regwindow-padmask", "round": 9, "detail": {"consecutive_fails": 1}}
 {"ts": "2026-09-26T20:31:41", "actor": "agent", "action": "kda verify", "target": "c003", "round": 9, "detail": {"passed": true, "err_ratio": [0.0, 0.0, 0.0]}}
 {"ts": "2026-09-26T20:32:42", "actor": "agent", "action": "kda bench", "target": "c004", "round": 9, "detail": {"mean_us": null, "contention": {"device": 7, "foreign_processes": 0}}}
+{"ts": "2026-09-26T20:33:06", "actor": "harness", "action": "router-query", "target": "", "round": 10, "detail": {"symptoms": ["pipeline-bubble", "tail-effect"], "family": "conv", "arch": "dav_2201", "hit": true}}
+{"ts": "2026-09-26T20:33:07", "actor": "harness", "action": "production-ref", "target": "", "round": 10, "detail": {"hit": true}}
+{"ts": "2026-09-26T20:33:07", "actor": "harness", "action": "skill-inject", "target": "", "round": 10, "detail": {"n": 2, "ids": ["triton-ascend-reduction-case", "triton-ascend-design-cases"]}}
+{"ts": "2026-09-26T20:33:23", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round10-write", "prompt_tokens": 2765, "completion_tokens": 1434}}
+{"ts": "2026-09-26T20:33:23", "actor": "harness", "action": "preflight-reject", "target": "c003", "round": 10, "detail": {"error": "SyntaxError: invalid syntax (c003.py, line 1)"}}
+{"ts": "2026-09-26T20:33:35", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round10-write-fix", "prompt_tokens": 3909, "completion_tokens": 1087}}
+{"ts": "2026-09-26T20:33:35", "actor": "harness", "action": "preflight-reject", "target": "c003", "round": 10, "detail": {"error": "fix-parse-failed", "attempt": 2}}
+{"ts": "2026-09-26T20:33:35", "actor": "agent", "action": "candidate-write", "target": "c003", "round": 10, "detail": {"direction": "unspecified", "knowledge_used": [], "hypothesis": "None"}}
+{"ts": "2026-09-26T20:33:54", "actor": "harness", "action": "fuse-check", "target": "direction=unspecified", "round": 10, "detail": {"consecutive_fails": 3}}
+{"ts": "2026-09-26T20:33:54", "actor": "agent", "action": "kda verify", "target": "c003", "round": 10, "detail": {"passed": false, "err_ratio": []}}
+{"ts": "2026-09-26T20:33:54", "actor": "harness", "action": "verify-step", "target": "c003", "round": 10, "detail": {"rc": 1, "passed": false}}
+{"ts": "2026-09-26T20:33:59", "actor": "harness", "action": "llm-call", "target": "reviewer:glm-5.3", "round": null, "detail": {"purpose": "round10-review", "prompt_tokens": 1112, "completion_tokens": 234}}
+{"ts": "2026-09-26T20:33:59", "actor": "gate", "action": "review", "target": "round-10", "round": 10, "detail": {"tail": "REVISE", "best_us": 0.0, "cur_us": null, "beat_pct": null}}
+{"ts": "2026-09-26T20:33:59", "actor": "harness", "action": "fuse-check", "target": "direction=unspecified", "round": 10, "detail": {"consecutive_fails": 4}}
+{"ts": "2026-09-26T20:33:59", "actor": "harness", "action": "fuse", "target": "direction=unspecified", "round": 10, "detail": {"reason": "3 consecutive fails", "action": "force-switch"}}
+{"ts": "2026-09-26T20:33:59", "actor": "harness", "action": "router-query", "target": "", "round": 11, "detail": {"symptoms": ["pipeline-bubble", "tail-effect"], "family": "conv", "arch": "dav_2201", "hit": true}}
+{"ts": "2026-09-26T20:34:00", "actor": "harness", "action": "production-ref", "target": "", "round": 11, "detail": {"hit": true}}
+{"ts": "2026-09-26T20:34:00", "actor": "harness", "action": "skill-inject", "target": "", "round": 11, "detail": {"n": 2, "ids": ["triton-ascend-reduction-case", "triton-ascend-design-cases"]}}
+{"ts": "2026-09-26T20:34:20", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round11-write", "prompt_tokens": 2772, "completion_tokens": 1625}}
+{"ts": "2026-09-26T20:34:20", "actor": "harness", "action": "preflight-reject", "target": "c016", "round": 11, "detail": {"error": "SyntaxError: invalid syntax (c016.py, line 1)"}}
+{"ts": "2026-09-26T20:34:35", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round11-write-fix", "prompt_tokens": 4260, "completion_tokens": 1457}}
+{"ts": "2026-09-26T20:34:35", "actor": "harness", "action": "preflight-reject", "target": "c016", "round": 11, "detail": {"error": "fix-parse-failed", "attempt": 2}}
+{"ts": "2026-09-26T20:34:35", "actor": "agent", "action": "candidate-write", "target": "c016", "round": 11, "detail": {"direction": "persist40-flat-tile-regwindow-seqloop", "knowledge_used": ["triton-ascend-reduction-case", "triton-ascend-design-cases", "triton-ascend-api-rules"], "hypothesis": "把 batch*hidden 展平为 40 个持久 core 的 flat tile，core 内循环 seq 并用寄存器保存 3 长度滑动窗，一次派发完成读状态→卷积→silu→滑动写回+输出，消除 vec 版 95% 的派发税"}}
+{"ts": "2026-09-26T20:34:54", "actor": "harness", "action": "fuse-check", "target": "direction=persist40-flat-tile-regwindow-seqloop", "round": 11, "detail": {"consecutive_fails": 1}}
+{"ts": "2026-09-26T20:34:54", "actor": "agent", "action": "kda verify", "target": "c016", "round": 11, "detail": {"passed": false, "err_ratio": []}}
+{"ts": "2026-09-26T20:34:54", "actor": "harness", "action": "verify-step", "target": "c016", "round": 11, "detail": {"rc": 1, "passed": false}}
+{"ts": "2026-09-26T20:34:58", "actor": "harness", "action": "llm-call", "target": "reviewer:glm-5.3", "round": null, "detail": {"purpose": "round11-review", "prompt_tokens": 1120, "completion_tokens": 203}}
+{"ts": "2026-09-26T20:34:58", "actor": "gate", "action": "review", "target": "round-11", "round": 11, "detail": {"tail": "REVISE", "best_us": 0.0, "cur_us": null, "beat_pct": null}}
+{"ts": "2026-09-26T20:34:58", "actor": "harness", "action": "fuse-check", "target": "direction=persist40-flat-tile-regwindow-seqloop", "round": 11, "detail": {"consecutive_fails": 2}}
+{"ts": "2026-09-26T20:34:58", "actor": "harness", "action": "router-query", "target": "", "round": 12, "detail": {"symptoms": ["pipeline-bubble", "tail-effect"], "family": "conv", "arch": "dav_2201", "hit": true}}
+{"ts": "2026-09-26T20:34:59", "actor": "harness", "action": "production-ref", "target": "", "round": 12, "detail": {"hit": true}}
+{"ts": "2026-09-26T20:34:59", "actor": "harness", "action": "skill-inject", "target": "", "round": 12, "detail": {"n": 2, "ids": ["triton-ascend-reduction-case", "triton-ascend-design-cases"]}}
+{"ts": "2026-09-26T20:35:16", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round12-write", "prompt_tokens": 2808, "completion_tokens": 1435}}
+{"ts": "2026-09-26T20:35:19", "actor": "agent", "action": "candidate-write", "target": "c017", "round": 12, "detail": {"direction": "unspecified", "knowledge_used": [], "hypothesis": "None"}}
+{"ts": "2026-09-26T20:36:09", "actor": "harness", "action": "fuse-check", "target": "direction=unspecified", "round": 12, "detail": {"consecutive_fails": 6}}
+{"ts": "2026-09-26T20:36:09", "actor": "agent", "action": "kda verify", "target": "c017", "round": 12, "detail": {"passed": false, "err_ratio": [0.0, 0.0, 0.9774093627929688]}}
+{"ts": "2026-09-26T20:36:09", "actor": "harness", "action": "verify-step", "target": "c017", "round": 12, "detail": {"rc": 1, "passed": false}}
+{"ts": "2026-09-26T20:36:14", "actor": "harness", "action": "llm-call", "target": "reviewer:glm-5.3", "round": null, "detail": {"purpose": "round12-review", "prompt_tokens": 1138, "completion_tokens": 197}}
+{"ts": "2026-09-26T20:36:14", "actor": "gate", "action": "review", "target": "round-12", "round": 12, "detail": {"tail": "REVISE", "best_us": 0.0, "cur_us": null, "beat_pct": null}}
+{"ts": "2026-09-26T20:36:14", "actor": "harness", "action": "fuse-check", "target": "direction=unspecified", "round": 12, "detail": {"consecutive_fails": 7}}
+{"ts": "2026-09-26T20:36:14", "actor": "harness", "action": "fuse", "target": "direction=unspecified", "round": 12, "detail": {"reason": "3 consecutive fails", "action": "force-switch"}}
+{"ts": "2026-09-26T20:48:59", "actor": "harness", "action": "k8-triton-verdict", "target": "c003", "round": null, "detail": {"best_measured_us": 606.0, "vs_vec_baseline_pct": -44.7, "code_lost": "cid 复用覆盖（已修复）", "verdict": "inconclusive-but-promising；6 循环缺陷永久修复"}}
