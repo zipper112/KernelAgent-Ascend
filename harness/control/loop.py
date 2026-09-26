@@ -550,6 +550,43 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
             f"ssh {host} 'cat {ws}/results/{job_id}.json'\n"
         )
 
+    @staticmethod
+    def _extract_result_json(stdout: str, job_id: str) -> dict | None:
+        """从 stdout 提取 results json：支持单行与多行（indent）格式。
+        策略：找 '{"job_id"' 起点做括号配平截取，json.loads 验证 + job_id 匹配。"""
+        import re as _re
+        for m in _re.finditer(r'\{\s*"job_id"', stdout):
+            start = m.start()
+            depth = 0
+            in_str = False
+            esc = False
+            for i in range(start, len(stdout)):
+                c = stdout[i]
+                if esc:
+                    esc = False
+                    continue
+                if c == "\\":
+                    esc = True
+                    continue
+                if c == '"':
+                    in_str = not in_str
+                    continue
+                if in_str:
+                    continue
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            d = json.loads(stdout[start:i + 1])
+                        except json.JSONDecodeError:
+                            break
+                        if d.get("job_id") == job_id:
+                            return d
+                        break
+        return None
+
     def _run_exec(self, round_: int, script: str, jobs: dict, kind: str,
                   candidate_id: str) -> dict:
         """执行 EXEC 脚本（policy 已过）→ 解析 results json。失败返回 {ok:False,...}。"""
@@ -564,18 +601,9 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         except subprocess.TimeoutExpired:
             return {"ok": False, "stage": "exec", "error": "exec-timeout>700s"}
         job = jobs[kind]
-        # 从 stdout 提取 results json（最后一行合法 JSON 且含 job_id）
-        result = None
-        for line in reversed((proc.stdout or "").splitlines()):
-            line = line.strip()
-            if line.startswith("{") and '"job_id"' in line:
-                try:
-                    d = json.loads(line)
-                    if d.get("job_id") == job["job_id"]:
-                        result = d
-                        break
-                except json.JSONDecodeError:
-                    continue
+        # 从 stdout 提取 results json（多行 indent JSON 也认——r7 根因：runner 落盘
+        # indent=1 多行格式，逐行 json.loads 永远失败）
+        result = self._extract_result_json(proc.stdout or "", job["job_id"])
         self.ev.log_audit("harness", "exec-run", target=candidate_id, round_=round_,
                           detail={"kind": kind, "rc": proc.returncode,
                                   "stdout_tail": (proc.stdout or "")[-300:],
@@ -605,16 +633,7 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
                                   target=candidate_id, round_=round_,
                                   detail={"kind": kind, "rc": fb.returncode,
                                           "stdout_tail": (fb.stdout or "")[-200:]})
-                for line in reversed((fb.stdout or "").splitlines()):
-                    line = line.strip()
-                    if line.startswith("{") and '"job_id"' in line:
-                        try:
-                            d = json.loads(line)
-                            if d.get("job_id") == job["job_id"]:
-                                result = d
-                                break
-                        except json.JSONDecodeError:
-                            continue
+                result = self._extract_result_json(fb.stdout or "", job["job_id"])
         if result is None:
             return {"ok": False, "stage": "parse", "rc": proc.returncode,
                     "error": f"results json 未在 stdout/远端 results（rc={proc.returncode}）",
