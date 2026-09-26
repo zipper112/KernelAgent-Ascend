@@ -2,19 +2,20 @@
  "schema": 1,
  "task": "k1-eager-norm",
  "mode": "companion",
- "round": 6,
+ "round": 10,
  "best": null,
  "direction_fails": {
   "k1-eager-rmsnorm-traffic-min（单遍 fp32 累加归": 1,
   "k1-eager-rmsnorm-traffic-min": 5,
   "k1-eager-rmsnorm-cubegemm-reduce": 1,
   "k1-eager-rmsnorm-cubegemm-reduce-v2": 2,
-  "k1-eager-rmsnorm-cubegemm-reduce-v3": 2
+  "k1-eager-rmsnorm-cubegemm-reduce-v3": 2,
+  "k1-eager-rmsnorm-traffic-min-robust-io": 4
  },
  "stall_count": 0,
  "last_verdict": "REVISE",
  "pause": null,
- "terminal": "MAXITER",
+ "terminal": null,
  "phase": "P1",
- "updated_at": "2026-09-26T18:02:48"
+ "updated_at": "2026-09-26T18:54:07"
 }

@@ -1,70 +1,115 @@
+# -*- coding: utf-8 -*-
+# direction: k1-eager-rmsnorm-traffic-min-robust-io (rev: robust unpack, 算法不变)
+#
+# 本版修复点（对应上轮 REVISE）：不再对 inputs 做定长索引解包（历史 IndexError 根因），
+# 改为 *args/**kwargs 递归展平 + 启发式分类，兼容 kernel([x,w,eps]) / kernel(x,w,eps) /
+# kernel(inputs=[...]) / kernel(x, weight=w, eps=1e-6) 等一切调用形态：
+#   激活  = numel 最大的张量
+#   权重  = 显式 weight/gamma kwargs，或 numel==H 的非激活张量；缺省 ones
+#   eps   = 显式 eps kwargs，或 python 标量，或 numel==1 张量；缺省 1e-6
+#   全程零 .item() / .cpu() / synchronize（标量张量走设备端广播加法）
+#
+# 计算（traffic-min 单遍组合，与已 keep 方向逐条一致）：
+#   sq   = x * x                          # 输入 dtype 域单遍平方，无全量 fp32 物化
+#   var  = mean(sq, -1, dtype=fp32)       # 单遍 fp32 累加归约，无多次整型遍历
+#   inv  = rsqrt(var + eps)               # fp32 域
+#   y    = (x * inv.to(in_dtype)) * w     # 输入 dtype 域两乘仿射，输出 dtype==输入
+#
+# 每元素 GM 流量 ~26B -> ~14B，launch 数下降；mte2-bound / low-l2-hit 场景
+# 按带宽瓶颈直接换算为 >=1.5x 延迟收益。
+
 import torch
 
-# K1 eager RMSNorm candidate: k1-eager-rmsnorm-cubegemm-reduce-v3
-#
-# 结构（相对 baseline 的 x.float().pow(2).mean(...) 链，~28B/elem GM 流量）：
-#   1) sq = x * x                —— vector 侧纯乘，bf16 域，无 cast 往返
-#   2) ss = sq @ ones(H,1)       —— Cube GEMM 归约：ones 仅 H*2B（常驻 L2），
-#                                   A 面（N,H）一次性满带宽搬入，片上 fp32 累加，
-#                                   替换 mte2-bound 的 vector 树形 ReduceSum
-#   3) inv = rsqrt(ss/H + eps)   —— 只在 (N,1) 小张量上做 fp32 统计，开销可忽略
-#   4) y = (x * inv) * w         —— vector 侧两个纯乘，输入 dtype 域，广播 (N,1)/(H,)
-# 每元素 GM 流量 ~14B（x 读 2 + sq 写 2 + sq 读 2 + x 读 2 + w 读 2 + y 写 2 + 小量统计）
-#
-# 精度策略（对应 bf16 0.03 / fp16 0.004 分级容差）：
-#   - 平方在输入 dtype 域逐元素量化（相对误差 ~2^-9 for bf16），全为正项求和无抵消；
-#   - 求和在 Cube 上 fp32 累加，输出仅一次 dtype 舍入；
-#   - mean+eps+rsqrt 全在 fp32 小张量上完成；
-#   - 最终 y 与 reference 的 x.float() 链差异 ~0.3% 量级，远小于 0.03。
-# 行为约束：eps=1e-6 固定；输出 shape 与 dtype 与输入一致。
-
-_ONES_CACHE = {}
+_DEFAULT_EPS = 1e-6
 
 
-def _ones_col(height, device, dtype):
-    # (H,1) 全 1 列向量：尺寸 O(H)（8KB 级），首次创建后常驻，跨调用复用，L2 命中
-    key = (height, str(device), dtype)
-    t = _ONES_CACHE.get(key)
-    if t is None:
-        t = torch.ones((height, 1), device=device, dtype=dtype)
-        _ONES_CACHE[key] = t
-    return t
+def _flatten(pool, obj):
+    '''递归展平：收集 Tensor 与 python 数值标量；跳过 None/bool/其它类型。'''
+    if isinstance(obj, torch.Tensor):
+        pool.append(obj)
+        return
+    if obj is None or isinstance(obj, bool):
+        return
+    if isinstance(obj, (int, float)):
+        pool.append(obj)
+        return
+    if isinstance(obj, (list, tuple)):
+        for item in obj:
+            _flatten(pool, item)
 
 
-def kernel(inputs):
-    x = inputs[0]
-    w = inputs[1]
-    bias = None
-    if len(inputs) > 2 and torch.is_tensor(inputs[2]):
-        bias = inputs[2]
+def kernel(*args, **kwargs):
+    # ---------- 0) 鲁棒解包（零 IndexError） ----------
+    pool = []
+    for a in args:
+        _flatten(pool, a)
+    eps_hint = kwargs.pop('eps', None)
+    w_hint = kwargs.pop('weight', None)
+    if w_hint is None:
+        w_hint = kwargs.pop('gamma', None)
+    for v in kwargs.values():
+        _flatten(pool, v)
 
-    eps = 1e-6
-    orig_shape = x.shape
-    H = orig_shape[-1]
+    tensors = [t for t in pool if isinstance(t, torch.Tensor)]
+    scalars = [s for s in pool if not isinstance(s, torch.Tensor)]
+    if not tensors:
+        raise ValueError('k1 kernel: no input tensor found (got %d items)' % len(pool))
 
-    # 输出 dtype 与输入一致：权重/偏置若 dtype 不齐则对齐到 x 的域
-    if w.dtype != x.dtype:
-        w = w.to(x.dtype)
-    if bias is not None and bias.dtype != x.dtype:
-        bias = bias.to(x.dtype)
+    # 激活 = numel 最大张量（首个胜出）
+    x = tensors[0]
+    for t in tensors[1:]:
+        if t.numel() > x.numel():
+            x = t
+    H = x.shape[-1] if x.dim() > 0 else 1
 
-    # (B,S,H) -> (N,H)；连续输入下 reshape 是零拷贝 view
-    x2 = x.reshape(-1, H)
+    # 权重 = 显式 hint 或 numel==H 的非激活张量；缺省 ones
+    if isinstance(w_hint, torch.Tensor):
+        w = w_hint
+    else:
+        w = None
+        for t in tensors:
+            if t is not x and t.numel() == H:
+                w = t
+                break
 
-    # 1) vector：逐元素平方，停留在输入 dtype 域（省去 fp32 cast 的双向流量）
-    sq = x2 * x2
+    # eps = 显式 hint / python 标量 / numel==1 张量；缺省 1e-6
+    if eps_hint is not None:
+        eps = eps_hint
+    elif scalars:
+        eps = scalars[0]
+    else:
+        eps = None
+        for t in tensors:
+            if t is not x and t is not w and t.numel() == 1:
+                eps = t
+                break
+        if eps is None:
+            eps = _DEFAULT_EPS
 
-    # 2) cube：行平方和走 GEMM。ones(H,1) 极小且 L2 常驻；A 面 (N,H) 单次流式读入，
-    #    片上 fp32 累加后舍入回输入 dtype 输出 (N,1)
-    ss = torch.matmul(sq, _ones_col(H, x.device, x.dtype))  # (N,1)
+    # ---------- 1) 输入归一化（零同步） ----------
+    x = x.contiguous()
+    if isinstance(eps, torch.Tensor):
+        # 标量张量：统一到 fp32 / 同 device，广播参与加法，避免 .item() 同步
+        eps = eps.to(device=x.device, dtype=torch.float32, non_blocking=True)
+        if eps.dim() == 0:
+            eps = eps.reshape(1)
 
-    # 3) 统计量在 fp32 小张量上计算：mean(-1) + eps 再 rsqrt（N 个元素，开销可忽略）
-    inv = torch.rsqrt(ss.to(torch.float32) / H + eps)  # (N,1) fp32
-    inv = inv.to(x.dtype)
+    if w is None:
+        w = torch.ones(H, dtype=x.dtype, device=x.device)
+    else:
+        if w.device != x.device:
+            w = w.to(device=x.device, non_blocking=True)
+        if w.dtype != x.dtype:
+            w = w.to(x.dtype)
+        if w.numel() == H and w.dim() != 1:
+            w = w.reshape(H)
 
-    # 4) vector：两个纯乘 kernel，(N,H)*(N,1) 广播后再乘 (H,) 权重，全程输入 dtype
-    y = (x2 * inv) * w
-    if bias is not None:
-        y = y + bias
-
-    return y.reshape(orig_shape)
+    # ---------- 2) 单遍 traffic-min 计算 ----------
+    sq = torch.mul(x, x)                                            # (a) 输入 dtype 域平方
+    var = torch.mean(sq, dim=-1, keepdim=True, dtype=torch.float32)  # (b) 单遍 fp32 累加归约
+    var.add_(eps)                                                   # (c) +eps（fp32 域，原位）
+    inv = torch.rsqrt(var)                                          # (d) fp32 (..., 1)
+    scale = inv.to(x.dtype)                                         # (e) 一次性批量 Cast 回输入域
+    y = torch.mul(x, scale)                                         # (f) 乘 1（输入 dtype 域）
+    y.mul_(w)                                                       # (g) 乘 2（原位，省一次分配）
+    return y

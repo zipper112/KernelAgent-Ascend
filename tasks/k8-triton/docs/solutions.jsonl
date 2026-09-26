@@ -1,0 +1,1 @@
+{"candidate_id": "c001", "parent_id": null, "direction": "baseline", "hypothesis": "", "diff_ref": "solution/c001/", "evidence_refs": ["benchmark.csv#c001"], "status": "keep", "round": 0, "fallback": false, "stage": "verify"}

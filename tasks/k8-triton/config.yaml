@@ -1,0 +1,35 @@
+# 任务运行配置（K8 真实任务）
+version: 0
+
+arch: dav_2201                          # 910B4
+dsl: triton-ascend                         # 本批候选纯 torch（去同步优先于 DSL）
+device_id: 0
+
+workload:
+  full_set: bench/workloads.yaml
+  repr_tag: repr
+  l0_smoke: 3
+
+budget:
+  max_rounds: 42
+  max_direction_fails: 3
+  stall_replan: 2
+  api_calls: 2000
+  wall_clock_min: 720
+  token_budget: 20000000
+
+execution:
+  remote:
+    enabled: true
+    jump: jump
+    host: yq-e15
+    mirror_root: "~/kda-ascend"
+    device_id: 7                        # 与冒烟任务分卡，互不干扰
+    exec_mode: docker
+    docker_image: "quay.io/ascend/vllm-ascend:nightly-main"
+    cann_env: ""
+
+measurement:
+  warmup: 3
+  samples: 5
+  l2_cache_clear: true

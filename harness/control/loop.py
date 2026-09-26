@@ -227,7 +227,11 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
                 temperature=0.0, max_tokens=16384, purpose=f"round{round_}-write-retry")
             d = self._parse_candidate_json(raw2)
         if d is None or "code" not in d:
-            raise RuntimeError(f"writer 输出解析失败（两轮）：{(raw if d is None else raw2)[:200]}")
+            # 解析失败不再炸循环：记审计 + 返回错误占位候选（本轮 review 判 REVISE，下轮带反馈重写）
+            self.ev.log_audit("harness", "write-parse-fail", target=cid, round_=round_,
+                              detail={"raw_head": (raw if d is None else raw2)[:150]})
+            return {"cid": cid, "direction": "parse-failed", "hypothesis":
+                    "writer 输出无法解析（截断/畸形）——需要更紧凑的代码输出", "code": "", "parse_failed": True}
         # 写后即检（本地零 NPU 成本拦截低级错；失败带错误回炉重写一次）
         err = self._preflight(d["code"], cid)
         if err:
@@ -411,7 +415,12 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
             print(f"[loop] round {round_} WRITE...", flush=True)
             cand = self.write_candidate(round_, research, feedback)
             print(f"[loop] round {round_} VERIFY {cand['cid']}...", flush=True)
-            vr = self.verify(round_, cand["cid"])
+            if cand.get("parse_failed"):
+                vr = {"passed": False, "workloads": [], "error": "write-parse-failed"}
+                self.ev.log_audit("harness", "verify-step", target=cand["cid"], round_=round_,
+                                  detail={"rc": 2, "passed": False, "skipped": "parse-failed"})
+            else:
+                vr = self.verify(round_, cand["cid"])
             br = None
             if vr.get("passed"):
                 print(f"[loop] round {round_} BENCH...", flush=True)

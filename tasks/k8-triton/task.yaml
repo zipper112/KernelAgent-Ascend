@@ -1,0 +1,23 @@
+# 任务契约：K8 causal_conv1d_update Triton 版（补上游缺失符号，E067 交付）
+contract:
+  task_name: k8-triton
+  op_family: conv
+  branch: task/k8-triton
+  research:
+    symptoms: [pipeline-bubble, tail-effect]
+    sources: ["K8 档（vec 版已 -34%，Triton 版为终局）", "flash-linear-attention-npu 参考实现", "production: 无（符号缺失即本任务）"]
+  objective: "单核 Triton-Ascend kernel 完成 conv state update（读状态→4 元素窗卷积→silu→写新状态+输出），中间张量归零派发归一，击败 c002 vec 版"
+  correctness:
+    verifier: remote-runner-v0
+    tolerance_ref: "bf16 0.03"
+    special_behaviors: ["conv_state 原地滑动更新", "pad 槽跳过", "eps 与 silu 语义同 c002"]
+  performance:
+    baseline: "c002 vec 版（B=16 p50 1102us；其中纯计算 <50us——95% 是派发与中间流量税）"
+    target: "B=16 p50 < 600us（>1.8x vs vec 版）"
+    noise_floor: 0.05
+  allowed:
+    dsl: [triton-ascend]
+    forbidden: ["禁 .item()/.cpu()", "禁 torch unfold/einsum 中间物化（本任务的存在理由）"]
+  validation_cmd: "python -m harness.cli verify --task k8-triton --candidate <cid>"
+  evaluation_cmd: "python -m harness.cli bench --task k8-triton --candidate <cid>"
+  promotion: "≥1.8x 且 verify 过 → E067 交付候选（补 causal_conv1d_update_npu 符号）"
