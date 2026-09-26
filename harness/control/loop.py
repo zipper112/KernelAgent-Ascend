@@ -521,20 +521,24 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         return {"verify": vjob, "bench": bjob, "bench_full": fjob,
                 "files": payload_files(self.task, candidate_id), "shas": shas}
 
-    def _canonical_exec(self, kind: str, jobs: dict) -> str:
-        """canonical 兜底 EXEC 脚本（LLM 未给 ===EXEC=== 块时用）。"""
+    def _canonical_exec(self, kind: str, jobs: dict, candidate_id: str = "c001") -> str:
+        """canonical 兜底 EXEC 脚本（LLM 未给 ===EXEC=== 块时用）。
+        tar 多次 -C 拍平到 payload 期望布局（与 cli._run_remote_job 同构）。"""
         from harness.context import canonical_cmd, remote_workspace
         rem = self._remote_cfg()
         host = rem.get("host", "yq-e15")
         ws = remote_workspace(self.task.name, rem)
         job = jobs[kind]
         job_id = job["job_id"]
-        files = jobs["files"]
-        tar_list = " ".join(files)
+        frozen = [f for f in ("reference.py", "bench/workloads.yaml")
+                  if (self.task / f).exists()]
+        tar_args = ("-C . infra/remote/runner.py infra/remote/container_entry.sh "
+                    f"-C tasks/{self.task.name} solution/{candidate_id}/candidate.py "
+                    + " ".join(frozen))
         jname = "job-bench-full.json" if kind == "bench_full" else f"job-{kind}.json"
         return (
-            f"tar cf - {tar_list} | ssh {host} 'mkdir -p {ws}/payload {ws}/results && tar xf - -C {ws}/payload'\n"
-            f"cat run/{jname} | ssh {host} 'cat > {ws}/payload/job.json'\n"
+            f"tar cf - {tar_args} | ssh {host} 'mkdir -p {ws}/payload {ws}/results && tar xf - -C {ws}/payload'\n"
+            f"cat tasks/{self.task.name}/run/{jname} | ssh {host} 'cat > {ws}/payload/job.json'\n"
             f"ssh {host} \"{canonical_cmd(job, rem)}\"\n"
             f"ssh {host} 'cat {ws}/results/{job_id}.json'\n"
         )
@@ -547,10 +551,9 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         (self.task / "run").mkdir(exist_ok=True)
         (self.task / f"run/round-{round_}-exec.sh").write_text(script, encoding="utf-8")
         try:
-            # 脚本在仓根 cwd 下执行（tar 相对路径 / cat run/... 相对任务目录不适用——
-            # 统一在任务目录下 bash -s，canonical 模板里的路径按此写）
+            # 脚本在仓根 cwd 下执行（canonical 模板里的 tar -C ./cat tasks/... 均为仓内相对路径）
             proc = subprocess.run(["bash", "-s"], input=script, capture_output=True,
-                                  text=True, timeout=700, cwd=str(self.task))
+                                  text=True, timeout=700, cwd=str(REPO_ROOT))
         except subprocess.TimeoutExpired:
             return {"ok": False, "stage": "exec", "error": "exec-timeout>700s"}
         job = jobs[kind]
@@ -597,7 +600,7 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
                                   **({"verify_mode": "chained"}
                                      if jobs["verify"].get("extra", {}).get("verify_mode")
                                      else {})})
-        script = cand.get("exec") or self._canonical_exec(kind, jobs)
+        script = cand.get("exec") or self._canonical_exec(kind, jobs, cand["cid"])
         if cand.get("exec"):
             ok, reason = check_exec_block(cand["exec"])
             if not ok:

@@ -245,14 +245,17 @@ def _run_remote_job(task_root: Path, state: dict, kind: str, candidate_id: str,
                  detail={"workload_set": workload_set, "n_workloads": len(wls),
                          "shas": shas, "job_id": job["job_id"],
                          **({"verify_mode": "chained"} if extra.get("verify_mode") else {})})
-    # 同步 payload + job.json（tar 管道一条；本地任务目录为 cwd）
-    files = payload_files(task_root, candidate_id)
-    tar_list = " ".join(files)
+    # 同步 payload + job.json（tar 管道；多次 -C 拍平到 payload 期望布局：
+    # payload/solution/<cid>/candidate.py + payload/reference.py（根）+ payload/infra/remote/ 双件）
     import shlex
+    frozen = [f for f in ("reference.py", "bench/workloads.yaml") if (task_root / f).exists()]
+    tar_args = (f"-C {shlex.quote(str(REPO_ROOT))} infra/remote/runner.py infra/remote/container_entry.sh "
+                f"-C {shlex.quote(str(task_root))} solution/{candidate_id}/candidate.py "
+                + " ".join(frozen))
+    host_dir = shlex.quote(f"mkdir -p {ws}/payload {ws}/results && tar xf - -C {ws}/payload")
     sync = subprocess.run(
-        f"tar cf - {tar_list} | ssh -o BatchMode=yes {host} "
-        f"'mkdir -p {ws}/payload {ws}/results && tar xf - -C {ws}/payload'",
-        shell=True, capture_output=True, timeout=300, cwd=str(task_root))
+        f"tar cf - {tar_args} | ssh -o BatchMode=yes {host} {host_dir}",
+        shell=True, capture_output=True, timeout=300, cwd=str(REPO_ROOT))
     if sync.returncode != 0:
         return {"ok": False, "stage": "push", "error": sync.stderr.decode()[:200]}
     import tempfile, os
