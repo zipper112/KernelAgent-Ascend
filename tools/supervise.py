@@ -114,10 +114,9 @@ def main() -> int:
         else:
             if r is not None and r in by_round:
                 by_round[r].append(e)
-            elif r is not None and by_round:
-                # 带轮号但轮未开（异常序）：就近挂最后轮
-                by_round[rounds[-1]].append(e)
             else:
+                # 带轮号但该轮未开（RESEARCH 先于本轮 candidate-write 到达）或无轮号：
+                # 挂 pending，等该轮 candidate-write 开轮时归位——绝不倒进上一轮
                 pending.append(e)
     if pending:
         if rounds:
