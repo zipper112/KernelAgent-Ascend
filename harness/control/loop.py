@@ -116,6 +116,64 @@ class AutonomousLoop:
 
     # ---------- 阶段 2：WRITE ----------
 
+    def _preflight(self, code: str, cid: str) -> str | None:
+        """写后即检（零 NPU 成本）：语法编译 + CPU 桩冒烟。返回错误串或 None。
+        远端 verify 一轮 ~10s 且占卡——低级错必须在本地拦截（k1-eager-norm 教训：
+        6 轮里 4 轮死于 list index/接口错，全可本地拦截）。"""
+        cdir = self.task / "solution" / cid
+        cdir.mkdir(parents=True, exist_ok=True)
+        (cdir / "candidate.py").write_text(code, encoding="utf-8")
+        try:
+            compile(code, f"{cid}.py", "exec")
+        except SyntaxError as e:
+            return f"SyntaxError: {e}"
+        try:
+            import types
+            import torch
+            saved_npu = getattr(torch, "npu", None)
+            saved_meth = getattr(torch.Tensor, "npu", None)
+            saved_tnpu = sys.modules.get("torch_npu")
+            torch.npu = types.SimpleNamespace(set_device=lambda i: None,
+                                              synchronize=lambda: None,
+                                              Event=type("E", (), {"__init__": lambda s, enable_timing=False: None,
+                                                                   "record": lambda s: None,
+                                                                   "elapsed_time": lambda s, o: 1.0}))
+            torch.Tensor.npu = lambda self: self
+            sys.modules["torch_npu"] = types.ModuleType("torch_npu")
+            try:
+                import importlib.util as _ilu
+                spec = _ilu.spec_from_file_location(cid, cdir / "candidate.py")
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                spec2 = _ilu.spec_from_file_location("ref", self.task / "reference.py")
+                refm = _ilu.module_from_spec(spec2)
+                spec2.loader.exec_module(refm)
+                import yaml as _y
+                wls = _y.safe_load((self.task / "bench" / "workloads.yaml")
+                                   .read_text(encoding="utf-8"))["workloads"]
+                for wl in wls[:2]:
+                    axes = wl["axes"]
+                    x = torch.randn(axes["batch"], axes["seq"], axes["hidden"],
+                                    dtype=torch.float32).to(torch.bfloat16)
+                    out = mod.kernel([x])
+                    if out is None:
+                        return "kernel returned None"
+                    ref = refm.reference([x.clone()])
+                    if tuple(out.shape) != tuple(ref.shape):
+                        return f"shape {tuple(out.shape)} != ref {tuple(ref.shape)}"
+            finally:
+                if saved_npu is not None:
+                    torch.npu = saved_npu
+                if saved_meth is not None:
+                    torch.Tensor.npu = saved_meth
+                if saved_tnpu is not None:
+                    sys.modules["torch_npu"] = saved_tnpu
+                else:
+                    sys.modules.pop("torch_npu", None)
+        except Exception as e:  # noqa: BLE001
+            return f"{type(e).__name__}: {str(e)[:150]}"
+        return None
+
     def write_candidate(self, round_: int, research: dict, feedback: str) -> dict:
         prev = self._candidates_summary()
         cid = f"c{len(self.ev.load_solutions()) + 1:03d}"
@@ -170,6 +228,30 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
             d = self._parse_candidate_json(raw2)
         if d is None or "code" not in d:
             raise RuntimeError(f"writer 输出解析失败（两轮）：{(raw if d is None else raw2)[:200]}")
+        # 写后即检（本地零 NPU 成本拦截低级错；失败带错误回炉重写一次）
+        err = self._preflight(d["code"], cid)
+        if err:
+            self.ev.log_audit("harness", "preflight-reject", target=cid, round_=round_,
+                              detail={"error": err[:120]})
+            fix_prompt = (f"你上一版候选在本地预检就失败：{err}。"
+                          "修复这个问题（大概率是接口/运行时错误，不是算法问题），"
+                          "输出同格式 JSON。上版代码：\n" + d["code"][:6000])
+            raw3 = self.models.chat("writer",
+                                    [{"role": "user", "content": prompt},
+                                     {"role": "user", "content": fix_prompt}],
+                                    temperature=0.0, max_tokens=16384,
+                                    purpose=f"round{round_}-write-fix")
+            d3 = self._parse_candidate_json(raw3)
+            if d3 and "code" in d3:
+                err2 = self._preflight(d3["code"], cid)
+                if not err2:
+                    d = d3
+                else:
+                    self.ev.log_audit("harness", "preflight-reject", target=cid, round_=round_,
+                                      detail={"error": err2[:120], "attempt": 2})
+            else:
+                self.ev.log_audit("harness", "preflight-reject", target=cid, round_=round_,
+                                  detail={"error": "fix-parse-failed", "attempt": 2})
         cdir = self.task / "solution" / cid
         cdir.mkdir(parents=True, exist_ok=True)
         (cdir / "candidate.py").write_text(d["code"], encoding="utf-8")
@@ -257,8 +339,28 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
 
     # ---------- 阶段 5：REVIEW ----------
 
+    def _best_baseline_us(self) -> float | None:
+        """reviewer 参照系：历史最优 mean_us（含 c001 基线——keep 的唯一合法参照）。"""
+        import csv
+        p = self.task / "docs" / "benchmark.csv"
+        if not p.exists():
+            return None
+        best = None
+        for row in csv.DictReader(p.read_text(encoding="utf-8").splitlines()):
+            try:
+                v = float(row["mean_us"])
+            except (ValueError, KeyError):
+                continue
+            best = v if best is None else min(best, v)
+        return best
+
     def review(self, round_: int, cid: str, vr: dict, br: dict | None) -> str:
         template = (REPO_ROOT / "knowledge" / "prompts" / "gate-review.md").read_text(encoding="utf-8")
+        best_us = self._best_baseline_us()
+        cur_us = (br or {}).get("mean_us")
+        beat = None
+        if best_us is not None and cur_us:
+            beat = round((best_us - cur_us) / best_us * 100, 1)
         prompt = f"""你是 gate 评审（只读；证据驱动）。简化轮评审（模板节选）：
 {template[:1500]}
 
@@ -266,16 +368,22 @@ kernel(inputs: list[Tensor]) -> Tensor；inputs 与 reference.py 一致；纯 to
 - verify：passed={vr.get('passed')} err_ratio={[w.get('err_ratio') for w in vr.get('workloads', [])]}
 - bench：{json.dumps({k: br.get(k) for k in ('mean_us', 'p50_us', 'p99_us', 'speedup')}, ensure_ascii=False) if br else '未跑（verify 未过）'}
 - 候选历史：{self._candidates_summary()}
+- **历史最优 mean_us = {best_us}**（含基线；本轮 {round(cur_us, 1) if cur_us else 'N/A'}，
+  {'快 ' + str(beat) + '%' if beat and beat > 0 else ('慢 ' + str(abs(beat)) + '%' if beat else '无可比')}）
 
-## 裁决规则
+## 裁决规则（按数据不按声明）
 - verify 未过 → REVISE（附一句修复方向）或 REJECT（方向死刑）
-- verify 过且 bench 出数 → 按证据判 keep（继续此方向）/ REVISE（可改进）
+- verify 过且 bench 出数：
+  - **mean_us 优于历史最优** → keep（这是唯一刷新纪录的合法判据；speedup 字段是相对
+    运行内 oracle 的比值，不可作为 keep 依据——以 mean_us 为准）
+  - 未超历史最优 → REVISE（写明差多少 μs）
 - 末行必须是四选一：COMPLETE / REVISE / REJECT / STOP
 输出：一段简短评审 + 末行裁决（恰好一行，在最后一行）。"""
         raw = self.models.chat("reviewer", [{"role": "user", "content": prompt}],
                                temperature=0.1, purpose=f"round{round_}-review")
         self.ev.log_audit("gate", "review", target=f"round-{round_}", round_=round_,
-                          detail={"tail": raw.strip().splitlines()[-1][:80] if raw.strip() else ""})
+                          detail={"tail": raw.strip().splitlines()[-1][:80] if raw.strip() else "",
+                                  "best_us": best_us, "cur_us": cur_us, "beat_pct": beat})
         last = raw.strip().splitlines()[-1].strip().upper() if raw.strip() else ""
         for v in ("COMPLETE", "REVISE", "REJECT", "STOP"):
             if last == v or last.startswith(v):
