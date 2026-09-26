@@ -1,0 +1,25 @@
+# 任务契约：K1 TP 集合同步 straggler（参数刀验证）
+# 来源：jump:/data01/mahaolong/mnt/GLM-5.3-Flash-Serve/kernels/targets/K1-*.md（+K2 同源视图）
+contract:
+  task_name: k1-tp-straggler
+  op_family: communication
+  branch: task/k1-tp-straggler
+  # agent 调研入口（loop.research 消费）：K1 档的症状轴
+  research:
+    symptoms: [pipeline-bubble, low-l2-hit, load-imbalance]
+    sources: ["kernels/targets/K1-aivkernel-tp-sync.md（jump）", "K2-hcom-allreduce-straggler.md（同源视图）"]
+  objective: "p16 段 TP8 straggler 缓解：参数刀（enable_reduce_sample / multistream_overlap_shared_expert）在 K8vec 之上解锁被淹没的吞吐与 TTFT 尾部"
+  correctness:
+    verifier: serving-ab-e2e          # 配置级改动：正确性由端到端生成 + E060/E061 上游验证背书；微基准 verify 不适用
+    tolerance_ref: "生成正常完成 + usage 一致；PPL 锚点遗留（proxy 解析待修）"
+    special_behaviors: ["起服成功且无新 ERROR（刀开关被镜像接受）"]
+  performance:
+    baseline: "e15 复刻 vec 臂（a3e37a5a：p16 r1 全 miss = 51.7 tok/s，p1 TPOT 16.2ms）"
+    target: "p16 r1 tok_s > +5%（噪声门）；TTFT p99 降幅 >10%；p1 TPOT 回归 <5%"
+    noise_floor: 0.05
+  allowed:
+    dsl: [serving-config]             # 本轮是配置候选；kernel 级（HCCL 重叠/分桶）为后续方向
+    forbidden: ["不改 bench 脚本测量口径", "禁用 prefix caching 等无关开关（保持单变量）"]
+  validation_cmd: "bash scripts/e15-start.sh vec（各臂）+ python3 e15-seq.py <tag>"
+  evaluation_cmd: "同左（serving 级，经 Evidence 入账 stage=serving-ab）"
+  promotion: "组合刀若达标 → 建议并入 E066-low-latency 线；不达标留证据否决"

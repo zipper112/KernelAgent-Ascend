@@ -1,0 +1,3 @@
+{"candidate_id": "c001", "parent_id": null, "direction": "baseline", "hypothesis": "", "diff_ref": "solution/c001/", "evidence_refs": ["benchmark.csv#c001"], "status": "keep", "round": 1, "fallback": false, "stage": "verify"}
+{"candidate_id": "c001", "parent_id": null, "direction": "baseline", "hypothesis": "", "diff_ref": "solution/c001/", "evidence_refs": ["benchmark.csv#c001"], "status": "keep", "round": 2, "fallback": false, "stage": "verify"}
+{"candidate_id": "c003", "parent_id": null, "direction": "baseline", "hypothesis": "", "diff_ref": "solution/c003/", "evidence_refs": ["benchmark.csv#c003"], "status": "keep", "round": 1, "fallback": false, "stage": "verify"}

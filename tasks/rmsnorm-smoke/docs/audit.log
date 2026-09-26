@@ -21,3 +21,15 @@
 {"ts": "2026-09-26T11:23:33", "actor": "harness", "action": "kda gate", "target": "", "round": null, "detail": {"stub": true}}
 {"ts": "2026-09-26T11:23:33", "actor": "harness", "action": "kda promote", "target": "", "round": null, "detail": {"stub": true}}
 {"ts": "2026-09-26T11:23:33", "actor": "harness", "action": "kda export", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:10:21", "actor": "harness", "action": "kda gate", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:10:22", "actor": "harness", "action": "kda promote", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:10:22", "actor": "harness", "action": "kda export", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:24:13", "actor": "harness", "action": "kda gate", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:24:13", "actor": "harness", "action": "kda promote", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:24:13", "actor": "harness", "action": "kda export", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:26:13", "actor": "harness", "action": "kda gate", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:26:13", "actor": "harness", "action": "kda promote", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:26:13", "actor": "harness", "action": "kda export", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:41:08", "actor": "harness", "action": "kda gate", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:41:08", "actor": "harness", "action": "kda promote", "target": "", "round": null, "detail": {"stub": true}}
+{"ts": "2026-09-26T15:41:08", "actor": "harness", "action": "kda export", "target": "", "round": null, "detail": {"stub": true}}

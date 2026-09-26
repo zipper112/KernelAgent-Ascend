@@ -1,7 +1,7 @@
 # agent-config/models.yaml —— 模型配置（唯一事实源）
 
-> 规则：换供应商只改本文件；密钥不进仓（读 agent-config/local-secrets.yaml 或环境变量 GLM_API_KEY）。
-> 端点已实测（2026-09-25）：glm-5.3-flash 经 coding/paas/v4 返回 200。
+# 规则：换供应商只改本文件；密钥不进仓（读 agent-config/local-secrets.yaml 或环境变量 GLM_API_KEY）。
+# 端点已实测（2026-09-25）：glm-5.3-flash 经 coding/paas/v4 返回 200。
 
 version: 1
 updated: 2026-09-25

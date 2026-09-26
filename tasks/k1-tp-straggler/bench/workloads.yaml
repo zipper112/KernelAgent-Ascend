@@ -1,0 +1,5 @@
+# K1 workload（serving 级）：p16 chunked-prefill straggler 场景（K1 档 〇₃ 场景 A）
+# 实际负载由 scripts/e15-seq.py 驱动（16 并发 × 4k 随机全 miss × 128 tok + p1 对照）
+workloads:
+  - {id: p16-cold,  axes: {batch: 16, seq: 4096, gen: 128}, dtype: bf16, repr: true, note: "全 miss r1（主判据）"}
+  - {id: p1-stream, axes: {batch: 1,  seq: 512,  gen: 384}, dtype: bf16, repr: true, note: "TPOT 对照（回归门）"}

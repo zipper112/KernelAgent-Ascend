@@ -1,0 +1,4 @@
+# reduce_sum 考题 workload：bandwidth-bound 大张量
+workloads:
+  - {id: w01, axes: {batch: 8, seq: 2048, hidden: 4096}, dtype: fp16, repr: true}
+  - {id: w02, axes: {batch: 1, seq: 1, hidden: 1048576}, dtype: fp16, repr: true}

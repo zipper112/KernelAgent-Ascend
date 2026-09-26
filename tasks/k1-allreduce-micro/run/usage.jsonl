@@ -1,0 +1,9 @@
+{"ts": "2026-09-26T15:17:00", "task": "k1-allreduce-micro", "role": "writer", "model": "glm-5.3", "prompt_tokens": 1006, "completion_tokens": 19271, "cumulative_task": 20277, "source": "api"}
+{"ts": "2026-09-26T15:18:24", "task": "k1-allreduce-micro", "role": "reviewer", "model": "glm-5.3", "prompt_tokens": 965, "completion_tokens": 2620, "cumulative_task": 23862, "source": "api"}
+{"ts": "2026-09-26T15:21:42", "task": "k1-allreduce-micro", "role": "writer", "model": "glm-5.3", "prompt_tokens": 1195, "completion_tokens": 15839, "cumulative_task": 40896, "source": "api"}
+{"ts": "2026-09-26T15:26:19", "task": "k1-allreduce-micro", "role": "writer", "model": "glm-5.3", "prompt_tokens": 1027, "completion_tokens": 8192, "cumulative_task": 50115, "source": "api"}
+{"ts": "2026-09-26T15:28:53", "task": "k1-allreduce-micro", "role": "writer", "model": "glm-5.3", "prompt_tokens": 2382, "completion_tokens": 8192, "cumulative_task": 60689, "source": "api"}
+{"ts": "2026-09-26T15:32:42", "task": "k1-allreduce-micro", "role": "writer", "model": "glm-5.3", "prompt_tokens": 2382, "completion_tokens": 16384, "cumulative_task": 79455, "source": "api"}
+{"ts": "2026-09-26T15:36:02", "task": "k1-allreduce-micro", "role": "writer", "model": "glm-5.3", "prompt_tokens": 2382, "completion_tokens": 12218, "cumulative_task": 94055, "source": "api"}
+{"ts": "2026-09-26T15:38:49", "task": "k1-allreduce-micro", "role": "writer", "model": "glm-5.3", "prompt_tokens": 2382, "completion_tokens": 9711, "cumulative_task": 106148, "source": "api"}
+{"ts": "2026-09-26T15:40:18", "task": "k1-allreduce-micro", "role": "reviewer", "model": "glm-5.3", "prompt_tokens": 989, "completion_tokens": 3512, "cumulative_task": 110649, "source": "api"}

@@ -1,0 +1,36 @@
+# 任务运行配置
+version: 0
+
+arch: TEMPLATE-dav_2201-or-dav_3510     # get_npu_arch.py 检测值；npu-smi Chip Name 不可信
+dsl: triton-ascend                      # ADR-001；adapter 架构可扩展
+device_id: 0
+
+workload:
+  full_set: bench/workloads.yaml        # 全量集（promote 用）
+  repr_tag: repr                        # 代表集标记字段（L0/L1 用）
+  l0_smoke: 1                           # L0 冒烟取代表集前 N 个
+
+budget:
+  max_rounds: 42                        # 熔断①：全局轮次上限
+  max_direction_fails: 3                # 熔断②：同方向连续失败换向
+  stall_replan: 2                       # 熔断③：停滞 N 轮重规划（N+1 轮停机）
+  api_calls: 2000                       # 熔断④a
+  wall_clock_min: 720                   # 熔断④b
+  token_budget: 20000000                # 熔断④c：任务级 token 上限（Budget Guard）
+
+# 远程执行（infra/remote；本地跑则 enabled: false）
+execution:
+  remote:
+    enabled: false                      # true 时 verify/bench/diagnose 经 RemoteExecutor 跑
+    jump: jump                          # ~/.ssh/config 跳板条目
+    host: yq-e15                        # 目标机（8×910B4）
+    mirror_root: "~/kda-ascend"         # 远端镜像根（payload/results；可再生，事实源在本地）
+    device_id: 0                        # 8 卡择一（npu-smi 查空闲后填）
+    exec_mode: docker                   # native|docker（2026-09-25 实测：e15 自装 CANN 不可用，容器是已验证路径）
+    docker_image: "xllm:glm-clone"      # CANN 8.2.RC1 + torch 2.1.0 + torch_npu 2.1.0（镜像随目标机 inventory 变）
+    cann_env: ""                        # native 模式的 CANN set_env.sh（要求目标机自装 CANN 可用）
+
+measurement:
+  warmup: 3
+  samples: 5                            # 交错采样轮数
+  l2_cache_clear: true                  # akg l2_cache_clear 流程

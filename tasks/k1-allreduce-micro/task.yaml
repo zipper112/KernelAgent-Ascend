@@ -1,0 +1,25 @@
+# 任务契约：reduce_sum 微基准优化（K1 通信链路的算子级切片，agent 自主迭代考题）
+# 背景：TP8 allreduce 的 aiv vector 卸载段（K2 档）在单卡的可测近亲 = 大张量 reduce_sum。
+# agent 须走完整链：调研（router+production reduce 族）→ skill 引用 → 候选 → verify → 迭代。
+contract:
+  task_name: k1-allreduce-micro
+  op_family: reduce
+  branch: task/k1-allreduce-micro
+  research:
+    symptoms: [low-l2-hit, tail-effect]     # K1/K2 档症状轴：带宽受限+长尾
+    sources: ["kernels/targets/K1|K2（jump）", "production: reduce_sum/reduce_prod（ops-math/math/）"]
+  objective: "大张量 reduce_sum 的延迟优化（bandwidth-bound；baseline=朴素 torch.sum）"
+  correctness:
+    verifier: remote-runner-v0
+    tolerance_ref: "fp16 0.004（dtype 分级表）"
+    special_behaviors: ["含 0/极值行结果稳定"]
+  performance:
+    baseline: "torch.sum(x, dim=-1)（eager）"
+    target: "≥1.05x（L0 噪声门之上）"
+    noise_floor: 0.05
+  allowed:
+    dsl: [pure-torch]
+    forbidden: ["不改 bench/ 定义", "禁 .item()/.cpu()"]
+  validation_cmd: "python -m harness.cli verify --task k1-allreduce-micro --candidate <cid>"
+  evaluation_cmd: "python -m harness.cli bench --task k1-allreduce-micro --candidate <cid>"
+  promotion: "考题：验证 agent 自主迭代符合度（supervise.py 全绿即达标，性能次之）"
