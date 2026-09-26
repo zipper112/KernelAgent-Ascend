@@ -1,104 +1,78 @@
-# K8: causal_conv1d_update Triton-Ascend kernel
-# inputs: x(B,S,D) bf16 | conv_state(B,D,3) | weight(D,4) | bias(D,) | indices(B,)
-# 语义（对齐 c002 / FLA causal_conv1d_update）:
-#   逐 token s: y[b,s,:] = silu( r0*w0 + r1*w1 + r2*w2 + x[b,s,:]*w3 + bias )
-#   窗口右滑一格: (r0,r1,r2) <- (r1,r2,x[b,s,:]); 结束后原地写回 conv_state[indices[b]]
-# pad 槽语义: 仅触碰 indices 命中的 conv_state 槽（gather/scatter），未命中槽零副作用
-# 无 .item()/.cpu()，无 unfold/einsum，无任何中间张量：单 kernel 单 launch
+# K8 triton-ascend candidate: causal_conv1d_update (decode, k=4 window, silu)
+# 语义（对齐 c002 / vLLM batch_indices 约定）:
+#   slot = indices[b]; slot < 0 (pad slot) -> out[b]=0, conv_state 不更新
+#   y = s0*w0 + s1*w1 + s2*w2 + x*w3 + bias   (w*: (D,4) 逐通道, fp32 累加)
+#   out = silu(y);  state 原地滑动: [s0,s1,s2] -> [s1,s2,x]
+# 单 kernel launch、零中间张量、无 unfold/einsum/item/cpu。
 import torch
 import triton
 import triton.language as tl
 
 
 @triton.jit
-def _k8_conv_update(
-    x_ptr, st_ptr, w_ptr, b_ptr, idx_ptr, o_ptr,
-    sx_b, sx_s,          # x strides: batch, seq (last dim contiguous)
-    ss_b, ss_d,          # conv_state strides: batch, dim (last dim contiguous, =3)
-    sw_d,                # weight stride over dim (=4)
-    D,                   # hidden
-    SEQ: tl.constexpr,   # tokens per request (1 或 4)，静态展开去依赖
-    BD: tl.constexpr,    # hidden 分块
+def _causal_conv1d_update_kernel(
+    X, CS, W, BIA, IDX, OUT,
+    sx_b, sx_s,          # x/out strides: (batch, seq)
+    scs_b, scs_d, scs_w,  # conv_state strides: (slot, dim, tap)
+    sw_d,                 # weight stride: (dim,)
+    S, D,
+    BLOCK_D: tl.constexpr,
 ):
-    pb = tl.program_id(0)
-    pd = tl.program_id(1)
-    offs = pd * BD + tl.arange(0, BD)
-    md = offs < D
-    bsel = tl.load(idx_ptr + pb).to(tl.int64)  # 本请求对应的 conv_state 槽
+    pid_b = tl.program_id(0)
+    pid_d = tl.program_id(1)
+    offs_d = pid_d * BLOCK_D + tl.arange(0, BLOCK_D)
+    m_d = offs_d < D
 
-    # weight 列向量 (D,4) 与 bias，fp32 计算域
-    w0 = tl.load(w_ptr + offs * sw_d + 0, mask=md, other=0.).to(tl.float32)
-    w1 = tl.load(w_ptr + offs * sw_d + 1, mask=md, other=0.).to(tl.float32)
-    w2 = tl.load(w_ptr + offs * sw_d + 2, mask=md, other=0.).to(tl.float32)
-    w3 = tl.load(w_ptr + offs * sw_d + 3, mask=md, other=0.).to(tl.float32)
-    vb = tl.load(b_ptr + offs, mask=md, other=0.).to(tl.float32)
+    # 该请求对应的 state 槽位；<0 = pad 槽（跳过 state，输出置 0）
+    slot = tl.load(IDX + pid_b).to(tl.int64)
+    valid = slot >= 0
+    cs = CS + tl.where(valid, slot, 0) * scs_b + offs_d * scs_d
 
-    # 初始窗口 = 旧状态最后 3 槽
-    sb = st_ptr + bsel * ss_b + offs * ss_d
-    r0 = tl.load(sb + 0, mask=md, other=0.).to(tl.float32)
-    r1 = tl.load(sb + 1, mask=md, other=0.).to(tl.float32)
-    r2 = tl.load(sb + 2, mask=md, other=0.).to(tl.float32)
+    # 逐通道 4-tap 权重 + bias，一次加载循环外复用（fp32 计算）
+    w0 = tl.load(W + offs_d * sw_d + 0, mask=m_d, other=0.0).to(tl.float32)
+    w1 = tl.load(W + offs_d * sw_d + 1, mask=m_d, other=0.0).to(tl.float32)
+    w2 = tl.load(W + offs_d * sw_d + 2, mask=m_d, other=0.0).to(tl.float32)
+    w3 = tl.load(W + offs_d * sw_d + 3, mask=m_d, other=0.0).to(tl.float32)
+    bb = tl.load(BIA + offs_d, mask=m_d, other=0.0).to(tl.float32)
 
-    xb = x_ptr + pb.to(tl.int64) * sx_b + offs
-    ob = o_ptr + pb.to(tl.int64) * sx_b + offs
+    # 窗口状态 [s0,s1,s2]（k-1 taps）驻留寄存器，跨 S 步携带
+    s0 = tl.load(cs + 0 * scs_w, mask=m_d & valid, other=0.0).to(tl.float32)
+    s1 = tl.load(cs + 1 * scs_w, mask=m_d & valid, other=0.0).to(tl.float32)
+    s2 = tl.load(cs + 2 * scs_w, mask=m_d & valid, other=0.0).to(tl.float32)
 
-    # 寄存器滚动窗：SEQ 静态展开，token 间零同步零访存回读
-    for s in tl.static_range(SEQ):
-        cur = tl.load(xb + s * sx_s, mask=md, other=0.).to(tl.float32)
-        a = r0 * w0 + r1 * w1 + r2 * w2 + cur * w3 + vb
-        a = a / (1.0 + tl.exp(-a))  # silu（标准语义，同 c002；exp 溢出自然收敛到 0/恒等）
-        tl.store(ob + s * sx_s, a.to(o_ptr.dtype.element_ty), mask=md)
-        r0, r1, r2 = r1, r2, cur
+    x_row = X + pid_b.to(tl.int64) * sx_b + offs_d
+    o_row = OUT + pid_b.to(tl.int64) * sx_b + offs_d
 
-    # 原地滑动更新最终状态
-    tl.store(sb + 0, r0.to(st_ptr.dtype.element_ty), mask=md)
-    tl.store(sb + 1, r1.to(st_ptr.dtype.element_ty), mask=md)
-    tl.store(sb + 2, r2.to(st_ptr.dtype.element_ty), mask=md)
+    for s in range(0, S):  # decode: S=1 (AR) 或 4 (MTP k=3)
+        xv = tl.load(x_row + s * sx_s, mask=m_d, other=0.0).to(tl.float32)
+        y = s0 * w0 + s1 * w1 + s2 * w2 + xv * w3 + bb
+        o = y / (1.0 + tl.exp(-y))  # silu = x*sigmoid(x)，eps 差异 << bf16 tol
+        tl.store(o_row + s * sx_s,
+                 tl.where(valid, o, 0.0).to(OUT.dtype.element_ty), mask=m_d)
+        s0 = s1  # 窗口滑动 1 tap
+        s1 = s2
+        s2 = xv
 
-
-def _block_d(B: int, D: int) -> int:
-    # 反 tail-effect：总 program 数尽量铺满 ~40 个向量核，B 小则切细 hidden
-    for bd in (512, 256, 128, 64):
-        if B * triton.cdiv(D, bd) >= 40:
-            return bd
-    return 64
+    # 原地滑动写回 conv_state 终态 [s0,s1,s2]；pad 槽不触碰
+    sm = m_d & valid
+    tl.store(cs + 0 * scs_w, s0.to(CS.dtype.element_ty), mask=sm)
+    tl.store(cs + 1 * scs_w, s1.to(CS.dtype.element_ty), mask=sm)
+    tl.store(cs + 2 * scs_w, s2.to(CS.dtype.element_ty), mask=sm)
 
 
 def kernel(inputs):
     x, conv_state, weight, bias, indices = inputs
     B, S, D = x.shape
     out = torch.empty_like(x)
-    if indices is None or indices.numel() == 0:
-        indices = torch.arange(B, device=x.device, dtype=torch.int64)
-    BD = _block_d(B, D)
-    grid = (B, triton.cdiv(D, BD))
-    _k8_conv_update[grid](
+    # grid: (B, D/512)；B=16,D=4096 -> 128 program，A2 ~40 核上粒度均衡（见 reduction-case 调度经验）
+    BLOCK_D = 512 if D >= 512 else triton.next_power_of_2(D)
+    grid = (B, triton.cdiv(D, BLOCK_D))
+    _causal_conv1d_update_kernel[grid](
         x, conv_state, weight, bias, indices, out,
         x.stride(0), x.stride(1),
-        conv_state.stride(0), conv_state.stride(1),
+        conv_state.stride(0), conv_state.stride(1), conv_state.stride(2),
         weight.stride(0),
-        D,
-        SEQ=S, BD=BD,
+        S, D,
+        BLOCK_D=BLOCK_D,
     )
     return out
-
-
-if __name__ == "__main__":  # 本地最小自检（不影响 harness）
-    torch.npu.set_device(0)
-    B, S, D = 4, 4, 4096
-    x = torch.randn(B, S, D, device="npu", dtype=torch.bfloat16)
-    st = torch.randn(B, D, 3, device="npu", dtype=torch.bfloat16)
-    w = torch.randn(D, 4, device="npu", dtype=torch.bfloat16)
-    bi = torch.randn(D, device="npu", dtype=torch.bfloat16)
-    idx = torch.arange(B, device="npu")
-    st_ref = st.clone()
-    xs = x.clone()
-    o = kernel([x, st, w, bi, idx])
-    for s in range(S):
-        y = (st_ref[:, :, 0] * w[:, 0] + st_ref[:, :, 1] * w[:, 1]
-             + st_ref[:, :, 2] * w[:, 2] + xs[:, s] * w[:, 3] + bi)
-        y = torch.nn.functional.silu(y.float()).to(torch.bfloat16)
-        assert torch.allclose(o[:, s].float(), y.float(), atol=0.03), s
-        st_ref = torch.cat([st_ref[:, :, 1:], xs[:, s:s+1].unsqueeze(-1)], -1)
-    assert torch.allclose(st.float(), st_ref.float(), atol=0.03)
-    print("k8-triton self-check OK")

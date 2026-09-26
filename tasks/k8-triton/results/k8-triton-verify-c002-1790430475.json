@@ -1,0 +1,17 @@
+{
+ "job_id": "k8-triton-verify-c002-1790430475",
+ "kind": "verify",
+ "candidate_id": "c002",
+ "device_id": 0,
+ "physical_device_id": 7,
+ "passed": false,
+ "workloads": [
+  {
+   "id": "w02",
+   "passed": false,
+   "error": "\n///------------------[ERROR][Triton][BEG]------------------\n[ConvertTritonIRToLinalgIR] encounters error:\nPassManager::run failed\n\n[INFO]: The compiled kernel cache is in /root/.triton/cache/vvU5LpkE"
+  }
+ ],
+ "verify_mode": "chained",
+ "elapsed_s": 27.6
+}

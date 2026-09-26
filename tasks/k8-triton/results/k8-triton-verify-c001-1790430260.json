@@ -1,0 +1,10 @@
+{
+ "job_id": "k8-triton-verify-c001-1790430260",
+ "kind": "verify",
+ "candidate_id": "c001",
+ "device_id": 0,
+ "physical_device_id": 7,
+ "ok": false,
+ "error": "RuntimeError: Initialize:../torch_npu/csrc/core/npu/sys_ctrl/npu_sys_ctrl.cpp:165 NPU function error: aclInit, error code is 507899\n[ERROR] 2026-09-26-13:44:33 (PID:1, Device:0, RankID:-1) ERR00100 PTA call acl api failed\n[Error]: An internal error occurs in the Driver module. \n        Rectify the fault based on the error information in the ascend log.\n[PID: 1] 2026-09-26-13:44:32.634.463 Resource_Busy(EL0005): The resources are busy.\n        Possible Cause: 1. The resources have been occupied. 2. The device is being reset. 3. Software is not ready.\n        Solution: 1. Close applications not in use. 2. Wait for a while and try again.\nTraceBack (most recent call last):\n        Get device cnt failed, retCode=0x7020010[FUNC:CheckDeviceIdIsValid][FILE:api_error.cc][LINE:4972]\n        drv devId is invalid, drv devId=0, retCode=0x7020010[FUNC:SetDefaultDeviceId][FILE:api_error.cc][LINE:5661]\n        rtSetDefaultDeviceId execution failed, reason=driver error:internal error[FUNC:FuncErrorReason][FILE:error_message_manage.cc][LINE:69]\n        [Process][DefaultDevice]process HandleDefaultDevice failed[FUNC:ReportInnerError][FILE:log_inner.cpp][LINE:132]\n        chipType=0 does not support get device msg feature.[FUNC:GetDevMsg][FILE:api_impl.cc][LINE:6119]\n        The argument is invalid. Reason: rtGetDevMsg execution failed, the feature is not supported.\n",
+ "elapsed_s": 9.14
+}
