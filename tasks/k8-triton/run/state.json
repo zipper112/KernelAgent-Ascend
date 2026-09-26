@@ -2,15 +2,18 @@
  "schema": 1,
  "task": "k8-triton",
  "mode": "companion",
- "round": 4,
+ "round": 6,
  "best": null,
  "direction_fails": {
-  "parse-failed": 4
+  "parse-failed": 8,
+  "fused-single-launch rolling-window（寄存器滑窗": 1,
+  "depthwise-conv1d-fused-window": 1,
+  "persistent40-regwindow-branchless": 1
  },
  "stall_count": 0,
  "last_verdict": "REVISE",
  "pause": null,
  "terminal": null,
  "phase": "P1",
- "updated_at": "2026-09-26T19:29:19"
+ "updated_at": "2026-09-26T19:49:38"
 }

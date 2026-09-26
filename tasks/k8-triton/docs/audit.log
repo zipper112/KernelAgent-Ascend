@@ -46,3 +46,61 @@
 {"ts": "2026-09-26T19:29:38", "actor": "agent", "action": "candidate-write", "target": "c001", "round": 4, "detail": {"direction": "fused-single-launch rolling-window（寄存器滑窗 + SEQ 静态展开 + indices gather/scatter）", "knowledge_used": ["triton-ascend-api-rules", "triton-ascend-hw-constraints", "triton-ascend-reduction-case (40 核/BLOCK 平衡)", "triton-op-designer", "triton-ascend-optimization"], "hypothesis": "c002 vec 版 95% 耗时是派发与中间张量税；单次 Triton launch 内用寄存器滚动窗完成读状态→4 抽头卷积→silu→原地写回，hidden 维 BLOCK 切分保证 ≥40 核占用，即可 >1.8x"}}
 {"ts": "2026-09-26T19:30:33", "actor": "agent", "action": "kda verify", "target": "c001", "round": 4, "detail": {"passed": true, "err_ratio": [0.0, 0.0, 0.0]}}
 {"ts": "2026-09-26T19:30:33", "actor": "harness", "action": "verify-step", "target": "c001", "round": 4, "detail": {"rc": 0, "passed": true}}
+{"ts": "2026-09-26T19:31:30", "actor": "agent", "action": "kda bench", "target": "c001", "round": 4, "detail": {"mean_us": 1297.3, "contention": {"device": 7, "foreign_processes": 0}}}
+{"ts": "2026-09-26T19:31:30", "actor": "harness", "action": "bench-step", "target": "c001", "round": 4, "detail": {"rc": 0, "mean_us": 1297.3226527372997, "speedup": 0.8539044493308653}}
+{"ts": "2026-09-26T19:31:46", "actor": "harness", "action": "llm-call", "target": "reviewer:glm-5.3", "round": null, "detail": {"purpose": "round4-review", "prompt_tokens": 1094, "completion_tokens": 1321}}
+{"ts": "2026-09-26T19:31:46", "actor": "gate", "action": "review", "target": "round-4", "round": 4, "detail": {"tail": "REVISE", "best_us": 1094.2, "cur_us": 1297.3226527372997, "beat_pct": -18.6}}
+{"ts": "2026-09-26T19:31:46", "actor": "harness", "action": "fuse-check", "target": "direction=fused-single-launch rolling-window（寄存器滑窗", "round": 4, "detail": {"consecutive_fails": 1}}
+{"ts": "2026-09-26T19:31:46", "actor": "harness", "action": "router-query", "target": "", "round": 5, "detail": {"symptoms": ["pipeline-bubble", "tail-effect"], "family": "conv", "arch": "dav_2201", "hit": true}}
+{"ts": "2026-09-26T19:31:46", "actor": "harness", "action": "production-ref", "target": "", "round": 5, "detail": {"hit": true}}
+{"ts": "2026-09-26T19:31:46", "actor": "harness", "action": "skill-inject", "target": "", "round": 5, "detail": {"n": 2, "ids": ["triton-ascend-reduction-case", "triton-ascend-design-cases"]}}
+{"ts": "2026-09-26T19:33:15", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round4-write", "prompt_tokens": 2555, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:35:25", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round5-write", "prompt_tokens": 2698, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:36:55", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round4-write-retry", "prompt_tokens": 2600, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:36:55", "actor": "harness", "action": "write-parse-fail", "target": "c002", "round": 4, "detail": {"raw_head": ""}}
+{"ts": "2026-09-26T19:36:55", "actor": "harness", "action": "verify-step", "target": "c002", "round": 4, "detail": {"rc": 2, "passed": false, "skipped": "parse-failed"}}
+{"ts": "2026-09-26T19:37:35", "actor": "harness", "action": "llm-call", "target": "reviewer:glm-5.3", "round": null, "detail": {"purpose": "round4-review", "prompt_tokens": 1007, "completion_tokens": 2914}}
+{"ts": "2026-09-26T19:37:35", "actor": "gate", "action": "review", "target": "round-4", "round": 4, "detail": {"tail": "REVISE", "best_us": 1094.2, "cur_us": null, "beat_pct": null}}
+{"ts": "2026-09-26T19:37:35", "actor": "harness", "action": "fuse-check", "target": "direction=parse-failed", "round": 4, "detail": {"consecutive_fails": 5}}
+{"ts": "2026-09-26T19:37:35", "actor": "harness", "action": "fuse", "target": "direction=parse-failed", "round": 4, "detail": {"reason": "3 consecutive fails", "action": "force-switch"}}
+{"ts": "2026-09-26T19:37:35", "actor": "harness", "action": "router-query", "target": "", "round": 5, "detail": {"symptoms": ["pipeline-bubble", "tail-effect"], "family": "conv", "arch": "dav_2201", "hit": true}}
+{"ts": "2026-09-26T19:37:35", "actor": "harness", "action": "production-ref", "target": "", "round": 5, "detail": {"hit": true}}
+{"ts": "2026-09-26T19:37:35", "actor": "harness", "action": "skill-inject", "target": "", "round": 5, "detail": {"n": 2, "ids": ["triton-ascend-reduction-case", "triton-ascend-design-cases"]}}
+{"ts": "2026-09-26T19:38:58", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round5-write-retry", "prompt_tokens": 2743, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:38:58", "actor": "harness", "action": "write-parse-fail", "target": "c001", "round": 5, "detail": {"raw_head": ""}}
+{"ts": "2026-09-26T19:38:58", "actor": "harness", "action": "verify-step", "target": "c001", "round": 5, "detail": {"rc": 2, "passed": false, "skipped": "parse-failed"}}
+{"ts": "2026-09-26T19:39:22", "actor": "harness", "action": "llm-call", "target": "reviewer:glm-5.3", "round": null, "detail": {"purpose": "round5-review", "prompt_tokens": 1007, "completion_tokens": 1694}}
+{"ts": "2026-09-26T19:39:22", "actor": "gate", "action": "review", "target": "round-5", "round": 5, "detail": {"tail": "REVISE", "best_us": 1094.2, "cur_us": null, "beat_pct": null}}
+{"ts": "2026-09-26T19:39:22", "actor": "harness", "action": "fuse-check", "target": "direction=parse-failed", "round": 5, "detail": {"consecutive_fails": 7}}
+{"ts": "2026-09-26T19:39:22", "actor": "harness", "action": "fuse", "target": "direction=parse-failed", "round": 5, "detail": {"reason": "3 consecutive fails", "action": "force-switch"}}
+{"ts": "2026-09-26T19:39:22", "actor": "harness", "action": "router-query", "target": "", "round": 6, "detail": {"symptoms": ["pipeline-bubble", "tail-effect"], "family": "conv", "arch": "dav_2201", "hit": true}}
+{"ts": "2026-09-26T19:39:23", "actor": "harness", "action": "production-ref", "target": "", "round": 6, "detail": {"hit": true}}
+{"ts": "2026-09-26T19:39:23", "actor": "harness", "action": "skill-inject", "target": "", "round": 6, "detail": {"n": 2, "ids": ["triton-ascend-reduction-case", "triton-ascend-design-cases"]}}
+{"ts": "2026-09-26T19:41:19", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round5-write", "prompt_tokens": 2589, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:43:00", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round6-write", "prompt_tokens": 2667, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:43:45", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round5-write-retry", "prompt_tokens": 2634, "completion_tokens": 11092}}
+{"ts": "2026-09-26T19:43:47", "actor": "harness", "action": "preflight-reject", "target": "c003", "round": 5, "detail": {"error": "ValueError: not enough values to unpack (expected 5, got 1)"}}
+{"ts": "2026-09-26T19:44:46", "actor": "harness", "action": "llm-call", "target": "aux:glm-5.3-flash", "round": null, "detail": {"purpose": "diag-aux", "prompt_tokens": 29, "completion_tokens": 1527}}
+{"ts": "2026-09-26T19:46:36", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round6-write-retry", "prompt_tokens": 2712, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:46:36", "actor": "harness", "action": "preflight-reject", "target": "c003", "round": 6, "detail": {"error": "SyntaxError: '(' was never closed (c003.py, line 44)"}}
+{"ts": "2026-09-26T19:47:17", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round5-write-fix", "prompt_tokens": 3572, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:47:17", "actor": "harness", "action": "preflight-reject", "target": "c003", "round": 5, "detail": {"error": "fix-parse-failed", "attempt": 2}}
+{"ts": "2026-09-26T19:47:17", "actor": "agent", "action": "candidate-write", "target": "c003", "round": 5, "detail": {"direction": "depthwise-conv1d-fused-window", "knowledge_used": ["triton-ascend-reduction-case", "triton-ascend-optimization", "triton-ascend-api-rules", "triton-ascend-hw-constraints", "flash-linear-attention-npu 参考实现"], "hypothesis": "把逐 token 的 4 元素窗乘加折叠成一次 groups=D 的 conv1d（互相关语义与滑窗卷积天然对齐），把每次调用的派发数从 ~30 压到 ~6（gather+cat+conv1d+silu+masked-幂等-scatter），从而把 B=16 p50 从 1102us 压到 600u"}}
+{"ts": "2026-09-26T19:47:35", "actor": "agent", "action": "kda verify", "target": "c003", "round": 6, "detail": {"passed": true, "err_ratio": [0.0, 0.0, 1.52587890625e-05]}}
+{"ts": "2026-09-26T19:47:35", "actor": "harness", "action": "verify-step", "target": "c003", "round": 5, "detail": {"rc": 0, "passed": true}}
+{"ts": "2026-09-26T19:47:56", "actor": "agent", "action": "kda bench", "target": "c003", "round": 6, "detail": {"mean_us": 646.9, "contention": {"device": 7, "foreign_processes": 0}}}
+{"ts": "2026-09-26T19:47:56", "actor": "harness", "action": "bench-step", "target": "c003", "round": 5, "detail": {"rc": 0, "mean_us": 646.9280064105988, "speedup": 1.0761602560577288}}
+{"ts": "2026-09-26T19:48:24", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "diag-writer-16k", "prompt_tokens": 64, "completion_tokens": 16384}}
+{"ts": "2026-09-26T19:48:57", "actor": "harness", "action": "llm-call", "target": "reviewer:glm-5.3", "round": null, "detail": {"purpose": "round5-review", "prompt_tokens": 1118, "completion_tokens": 5139}}
+{"ts": "2026-09-26T19:48:57", "actor": "gate", "action": "review", "target": "round-5", "round": 5, "detail": {"tail": "REVISE", "best_us": 646.9, "cur_us": 646.9280064105988, "beat_pct": -0.0}}
+{"ts": "2026-09-26T19:48:57", "actor": "harness", "action": "fuse-check", "target": "direction=depthwise-conv1d-fused-window", "round": 5, "detail": {"consecutive_fails": 1}}
+{"ts": "2026-09-26T19:48:58", "actor": "harness", "action": "router-query", "target": "", "round": 6, "detail": {"symptoms": ["pipeline-bubble", "tail-effect"], "family": "conv", "arch": "dav_2201", "hit": true}}
+{"ts": "2026-09-26T19:48:58", "actor": "harness", "action": "production-ref", "target": "", "round": 6, "detail": {"hit": true}}
+{"ts": "2026-09-26T19:48:58", "actor": "harness", "action": "skill-inject", "target": "", "round": 6, "detail": {"n": 2, "ids": ["triton-ascend-reduction-case", "triton-ascend-design-cases"]}}
+{"ts": "2026-09-26T19:49:19", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "round6-write-fix", "prompt_tokens": 3270, "completion_tokens": 13480}}
+{"ts": "2026-09-26T19:49:19", "actor": "harness", "action": "preflight-reject", "target": "c003", "round": 6, "detail": {"error": "fix-parse-failed", "attempt": 2}}
+{"ts": "2026-09-26T19:49:19", "actor": "agent", "action": "candidate-write", "target": "c003", "round": 6, "detail": {"direction": "persistent40-regwindow-branchless", "knowledge_used": ["triton-ascend-reduction-case", "triton-ascend-api-rules", "triton-ascend-hw-constraints", "triton-ascend-coding-standards", "production: flash-linear-attention-npu"], "hypothesis": "vec 版 95% 开销是派发税与中间张量流量；用单次常驻 40 核 launch（核内 tile 循环 + 寄存器滚动窗 + SEQ 静态展开 + 无分支 pad 屏蔽）零中间张量完成全部读写，p50 < 600us"}}
+{"ts": "2026-09-26T19:49:30", "actor": "harness", "action": "llm-call", "target": "writer:glm-5.3", "round": null, "detail": {"purpose": "diag-thinking-off", "prompt_tokens": 54, "completion_tokens": 1294}}
+{"ts": "2026-09-26T19:49:38", "actor": "harness", "action": "fuse-check", "target": "direction=persistent40-regwindow-branchless", "round": 6, "detail": {"consecutive_fails": 1}}
+{"ts": "2026-09-26T19:49:38", "actor": "agent", "action": "kda verify", "target": "c003", "round": 6, "detail": {"passed": false, "err_ratio": []}}
+{"ts": "2026-09-26T19:49:38", "actor": "harness", "action": "verify-step", "target": "c003", "round": 6, "detail": {"rc": 1, "passed": false}}

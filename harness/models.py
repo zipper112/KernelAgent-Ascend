@@ -53,12 +53,16 @@ class ModelsClient:
     # ---------- 调用 ----------
 
     def chat(self, role: str, messages: list[dict], temperature: float = 0.3,
-             max_tokens: int | None = None, purpose: str = "") -> str:
+             max_tokens: int | None = None, purpose: str = "",
+             thinking: str | None = "disabled") -> str:
         """角色调用：返回 assistant 文本。usage 记账（两级）；QuotaError 上抛。
-        max_tokens 缺省 = models.yaml 的 max_tokens_per_call（轮级上限，硬执行——
-        无此保护时 writer 单次回复可跑 1.9 万 token，套餐浪费风险）。"""
+        max_tokens 缺省 = models.yaml 的 max_tokens_per_call（轮级上限，硬执行）。
+        thinking：GLM-5.3 是推理模型——不关思考时 16k 预算会被 reasoning_content
+        吃光（finish_reason=length 且 content 空，实测 2026-09-26）。循环自带
+        评审与迭代反馈，模型内部慢思考冗余 → 默认 disabled；需要时显式传 'enabled'。"""
         rc = self._role_cfg(role)
         cap = max_tokens or int(self._defaults.get("max_tokens_per_call", 8192))
+        self._thinking = thinking
         key = self._key()
         attempts = [(rc["model"], rc["base_url"]), *rc["fallbacks"]]
         max_retries = int(self._defaults.get("max_retries", 2))
@@ -82,6 +86,9 @@ class ModelsClient:
         body = {"model": model, "messages": messages, "temperature": temperature}
         if max_tokens:
             body["max_tokens"] = max_tokens
+        th = getattr(self, "_thinking", "disabled")
+        if th == "disabled":
+            body["thinking"] = {"type": "disabled"}   # GLM 推理模型：不关则预算被思维链吃光
         req = urllib.request.Request(
             base_url.rstrip("/") + "/chat/completions",
             data=json.dumps(body).encode(),
@@ -104,4 +111,13 @@ class ModelsClient:
             self.ev.log_audit("harness", "llm-call", target=f"{role}:{model}",
                               detail={"purpose": purpose, "prompt_tokens": p_tok,
                                       "completion_tokens": c_tok})
-        return data["choices"][0]["message"]["content"]
+        choices = data.get("choices") or [{}]
+        msg = (choices[0].get("message") or {})
+        content = msg.get("content")
+        finish = choices[0].get("finish_reason")
+        if not content:
+            # 计费但空内容（实测 16k 输出时出现）：抛诊断而非静默空串烧循环
+            raise RuntimeError(
+                f"empty content (finish_reason={finish}, billed c={c_tok}); "
+                f"reasoning_content head={str(msg.get('reasoning_content'))[:120]!r}")
+        return content
