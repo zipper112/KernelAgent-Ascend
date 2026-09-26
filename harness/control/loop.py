@@ -80,6 +80,11 @@ class AutonomousLoop:
         self.ev.log_audit("harness", "production-ref", round_=round_,
                           detail={"hit": "NO MATCH" not in prod})
         # skill 切片注入（router 命中的 ref：文件直接读；目录则找其下 SKILL.md 或首个 .md）
+        # 上下文预算护栏（用户上限 250k，0.8x=200k 软线）：注入量按余量自适应
+        budget = int(self.models._defaults.get("context_window", 250000))
+        soft = int(budget * 0.8)
+        used = self._context_used_tokens()
+        per_skill = max(1200, (soft - used) // 4)   # 注入侧最多吃 1/4 余量，下限 1200 字符
         for m in re.finditer(r"\[[^\]]+\] ([\w-]+): ([\w-]+) -> ([^\s]+)", out["router"]):
             skill_id, skill, ref = m.group(1), m.group(2), m.group(3)
             p = REPO_ROOT / ref
@@ -92,11 +97,25 @@ class AutonomousLoop:
             if p and p.exists() and p.is_file():
                 body = p.read_text(encoding="utf-8")
                 out["skills"].append({"id": skill_id, "skill": skill, "ref": ref,
-                                      "excerpt": body[:1500]})
+                                      "excerpt": body[:per_skill]})
         self.ev.log_audit("harness", "skill-inject", round_=round_,
                           detail={"n": len(out["skills"]),
-                                  "ids": [s["id"] for s in out["skills"]]})
+                                  "ids": [s["id"] for s in out["skills"]],
+                                  "ctx_budget": {"window": budget, "soft": soft,
+                                                 "used_est": used}})
         return out
+
+    def _context_used_tokens(self) -> int:
+        """上下文占用估算：usage 账本最近 prompt_tokens（现行循环每轮独立 messages，
+        不累积会话——占用=单轮 prompt 规模；此值为注入侧的自适应依据）。"""
+        p = self.task / "run" / "usage.jsonl"
+        if not p.exists():
+            return 0
+        last = ""
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                last = line
+        return int(json.loads(last).get("prompt_tokens", 0)) if last else 0
 
     def _task_symptoms(self) -> list[str]:
         import yaml
