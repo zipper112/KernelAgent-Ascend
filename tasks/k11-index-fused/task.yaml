@@ -1,0 +1,17 @@
+contract:
+  task_name: k11-index-fused
+  op_family: sort
+  branch: task/k11-index-fused
+  research:
+    symptoms: [index-gather-scatter-fusion, launch-overhead]
+    sources: ["K9 档（E068 B/C 窗 5 连发×99/71 次）", "glm5next/kda.py:404-485 调用点", "上游 #17299 同族"]
+  objective: "spec decode token 索引 5 连发串融合单核，击败 aclnn 小核群"
+  correctness:
+    verifier: remote-runner-v0
+    tolerance_ref: "bf16 0.03（索引 op 应 bit-exact，容差仅为防御）"
+  performance:
+    baseline: "c000=上游 5 连发原样"
+    target: "w02 < c000×0.7"
+  allowed: {dsl: [triton-ascend], forbidden: ["禁 .item()", "禁改冻结面"]}
+  verify_mode: single
+  workload_sets: {dev: [w02], full: [w01, w02, w03]}

@@ -1,0 +1,23 @@
+# 任务运行配置（K10）
+version: 0
+arch: dav_2201
+dsl: triton-ascend
+device_id: 7
+
+budget:
+  max_rounds: 42
+  api_calls: 2000
+
+measurement:
+  warmup: 3
+  samples: 5
+
+execution:
+  remote:
+    enabled: true
+    jump: ""
+    host: yq-e15
+    mirror_root: "~/kda-ascend"
+    device_id: 7
+    exec_mode: docker
+    docker_image: "quay.io/ascend/vllm-ascend:nightly-main"
