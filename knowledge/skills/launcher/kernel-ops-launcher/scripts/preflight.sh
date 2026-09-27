@@ -2,7 +2,7 @@
 # preflight.sh —— 阶段①控制机环境自检（只读；输出 JSON 判定，root agent 消费）
 # 用法：bash preflight.sh [repo_root]   （默认脚本位置上溯 5 级 = 仓根）
 set -uo pipefail
-REPO="${1:-$(cd "$(dirname "$0")/../../../../../.." && pwd)}"
+REPO="${1:-$(cd "$(dirname "$0")/../../../../.." && pwd)}"
 
 j() { printf '%s\n' "$1"; }
 
