@@ -1,48 +1,55 @@
 # KDA-Ascend
 
-**昇腾算子自动迭代优化工具**——把 MLSys 2026 FlashInfer 竞赛验证过的 KDA 工作流（Kernel Design Agents），改造为生产可用、团队长期维护、模型供应商无关（主用 GLM）的华为昇腾 NPU 算子开发迭代系统。
+**昇腾算子自动迭代优化工具**——照 MLSys 2026 FlashInfer 竞赛验证的形态：**Codex CLI 当引擎（GLM 驱动）+ 纯规则裁判 + 知识资产 + 证据账本**。不自研迭代循环（v0 自研引擎的教训见 ADR-014）。
 
-## 项目定位
+## 项目定位（ADR-014 比赛形态）
 
-两个同等重要的核心：
+```
+phase.md（任务书）+ AGENTS.md（工作规约，codex 自动读取）
+        │
+        ▼
+codex exec -s danger-full-access（宿主引擎；GLM-5.3 via Responses API）
+        │   轮内小循环：verify --fast → 读全量报错 → 增量 Edit → 再验（秒级，收敛主力）
+        ▼
+verify.py / bench.py（纯规则裁判，零 LLM；底层 canonical runner 上 e15 NPU 实测）
+        │
+        ▼
+docs/ 三件套（benchmark.csv / solutions.jsonl / audit） + git commit（keep 才提交）
 
-1. **Harness（`harness/`）**：严谨的生产闭环。确定性核心（正确性验证、三层测量、诊断、证据链、晋升门）零 LLM 依赖；控制层（循环状态机、评审门、上下文组装）是唯一接触模型的地方。
-2. **知识资产（`knowledge/`）**：prompt 体系 + skill 路由 + 经验库 + 盲区治理。与代码同等版本化维护。
+knowledge/（router + skills）← agent 主动查询（症状词来自当前报错）
+```
 
-模型层刻意最薄（`agent-config/models.yaml`）：role→endpoint 映射 + 三条自动调控规则，OpenAI 兼容协议统一，换供应商只改一个文件。
+三个组成部分：
+
+1. **裁判层（零 LLM）**：任务级 `verify.py`/`bench.py`（比赛骨架）+ `infra/remote/runner.py`（canonical 测量口径：chained 终态门/L2 清除/交错采样）。
+2. **知识资产（`knowledge/`）**：三轴 router + vendored skills + prompt 条款库。与代码同等版本化。
+3. **账本与监督**：证据三件套约定 + `tools/supervise.py` 外部审计（知识利用/事件序列）。
 
 ## 三源合流
 
 | 上游 | 取什么 | 落在哪 |
 |---|---|---|
-| [NVlabs/kda](https://github.com/NVlabs/kda) | 任务契约 8 槽、draft 六要素、证据驱动三态、通用层/工作区分层哲学 | `knowledge/prompts/contract-template.md`、`tasks/` 布局 |
-| [PolyArch/humanize](https://github.com/PolyArch/humanize) v1.16.0 | 拦截退出循环、9 项硬校验、评审契约、漂移熔断、BitLesson、round-prompt 渲染、防过期上下文 | `harness/control/`、`harness/ctx/` |
-| [mit-han-lab/mlsys2026-flashinfer-contest](https://github.com/mit-han-lab/mlsys2026-flashinfer-contest) | 三阶段任务书、开发集/全量分层、每方向 5 次迭代上限、候选 DAG、否决留痕、形状感知路由、reward hacking 防御条款 | `knowledge/prompts/phase1-3-ascend.md`、`harness/core/evidence.py` 规格、`knowledge/prompts/clauses/` |
+| [mit-han-lab/mlsys2026-flashinfer-contest](https://github.com/mit-han-lab/mlsys2026-flashinfer-contest) | **总体形态**：phase prompt + 宿主 agent + 纯规则 verify.py + 三件套自律记账 + CLAUDE.md 工作流注入 | `tasks/<t>/{phase.md,AGENTS.md,verify.py,bench.py}`、`launch.sh` |
+| [NVlabs/kda](https://github.com/NVlabs/kda) | 任务契约 8 槽、draft 六要素、证据驱动三态、通用层/工作区分层 | `knowledge/prompts/contract-template.md`、`tasks/` 布局 |
+| [PolyArch/humanize](https://github.com/PolyArch/humanize) v1.16.0 | 校验/熔断/经验回流思想（轮末审计、漂移检测、BitLesson） | `tools/supervise.py`、`knowledge/lessons/`、条款库 |
 
 ## 目录结构
 
 ```
 kda-ascend/
-├── harness/            # 核心一：生产闭环
-│   ├── core/           #   确定性核心（verify/measure/diagnose/evidence/promote，零 LLM）
-│   ├── control/        #   控制层（runner 状态机 / gate 评审门）
-│   ├── ctx/            #   上下文组装器（round 渲染/防过期/三层注入/承认闸门）
-│   ├── hooks/          #   宿主适配器（ZCode/Claude Code Stop-hook；Phase 1 交付）
-│   └── cli.py          #   agent 交互入口（kda verify/bench/diagnose/promote/...）
-├── knowledge/          # 核心二：知识资产（与 harness 同级的一等公民）
-│   ├── prompts/        #   契约模板 + 三阶段模板 + 可组合条款库
-│   ├── router/         #   三轴索引（症状×算子族×硬件代际）+ 路由决策表 + 盲区清单
-│   ├── skills/         #   vendored skill 资产（六组 77 目录 + akg 89 skill；ADR-008 自包含）
-│   └── lessons/        #   BitLesson 经验库（跨任务沉淀回流）
-├── third_party/akg/    # KernelVerifier 代码子树（钉版 5aa15f3，Apache-2.0）
-├── agent-config/       # 模型配置（GLM 主配，OpenAI 兼容）
-├── docs/               # ADR 决策记录 / 交互协议规格 / 维护手册
-├── deps/               # vendor-manifest（hash 钉版）+ 上游来源记录
-├── infra/              # 非核心基础设施（remote 远程执行 / secrets 密钥；ADR-007 解耦）
-├── tasks/              # 算子任务工作区（七件套，任务资产永不进通用层）
-│   └── _template/      #   clone 即用的任务骨架
-├── tools/              # check_env.py 自检 + sync_assets.py 资产更新（可选）
-└── tests/              # 无卡机可跑的单测（资产断言/路由语义/gate 契约）
+├── launch.sh           # 战役发射器（codex exec + phase.md 一次性注入）
+├── tasks/<task>/       # 任务工作区（自包含：AGENTS.md 工作规约 + phase.md 任务书
+│   │                   #   + verify.py/bench.py 裁判 + solution/ 候选 + docs/ 账本）
+│   └── _template/      #   新任务骨架
+├── knowledge/          # 知识资产（router 三轴索引 + skills 77 目录 + prompts/lessons）
+├── infra/remote/       # canonical runner + 容器入口（e15 NPU 测量协议，零 LLM）
+│   └── secrets/        #   密钥 provider（local-secrets.yaml/env）
+├── third_party/akg/    # KernelVerifier 子树（钉版 5aa15f3）
+├── agent-config/       # key 与模型参考配置（codex 实际用 ~/.codex/config.toml）
+├── tools/              # supervise.py 监督仪表 + sync_assets.py + check_env.py
+├── docs/design/        # ADR 决策记录（ADR-014 为现行架构）
+├── attic/engine-v0/    # 已废除的自研迭代引擎（ADR-014；git 历史保留供考古）
+└── tests/              # 无卡机单测（runner 语义/资产断言/路由）
 ```
 
 ## 快速开始
@@ -51,16 +58,35 @@ kda-ascend/
 # 1. 环境自检（无 NPU 机器也能跑，NPU 项会列为 pending）
 python tools/check_env.py
 
-# 2. （上板机）完整自检含 CANN/torch_npu/triton-ascend
-python tools/check_env.py --full
+# 2. 发射一次算子优化战役（ADR-014 形态；前置：codex 配置 + key + e15 免密，见下节）
+bash launch.sh b5        # 注入 phase.md 给 codex，之后全自动：研究→内环 verify→bench→记账→commit
 
-# 3. 新建算子任务（Phase 1 实现后可用）
-kda new-task tasks/my-op   # 从 _template 生成七件套
+# 3. 单独跑裁判（人类/CI 用，不经 agent）
+cd tasks/k8-triton && python verify.py --solution solution/c019/candidate.py --fast
+python bench.py --solution solution/c019/candidate.py --record
 ```
 
-当前状态：**v0.0-scaffold**（骨架+协议规格+知识模板已就位；harness 代码 Phase 1 实现）。路线图见 [CHANGELOG.md](CHANGELOG.md) 与各 [ADR](docs/design/)。
+当前状态：**ADR-014 比赛形态**（codex 宿主+瘦裁判；v0 自研引擎已入 attic）。路线图见 [CHANGELOG.md](CHANGELOG.md) 与各 [ADR](docs/design/)。
 
 ## 重资产与部署（新机器必读）
+
+### 0. Codex 宿主接线（ADR-014 核心，一次性）
+
+```bash
+# jump 上已装 codex-cli 0.157.1（npm i -g @openai/codex）
+cat > ~/.codex/config.toml << 'EOF'
+model = "glm-5.3"
+model_provider = "glm"
+[model_providers.glm]
+name = "GLM Responses"
+base_url = "https://open.bigmodel.cn/api/v1"   # Responses API（非 chat 的 paas/v4！）
+env_key = "GLM_API_KEY"
+wire_api = "responses"
+EOF
+export GLM_API_KEY=<key>   # 或从 agent-config/local-secrets.yaml 提取
+codex exec -s read-only --skip-git-repo-check "reply: ok"   # 冒烟
+```
+注意：沙箱必须 `-s danger-full-access`（workspace-write 禁网，ssh 不到 e15——实测）。
 
 ### git 内资产（clone 即得）
 
