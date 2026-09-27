@@ -81,11 +81,18 @@ def test_gate_stop_exit_code_defined():
 
 
 def test_gitignore_reinclude_semantics():
-    """断点/轮次/摘要入仓 + 大文件排除（A8 教训，git check-ignore 实测）。"""
+    """ADR-014 后口径：任务运行时产物全屏蔽（证据留本地，git 只带定义面）+ 大文件排除。"""
     import subprocess
-    tracked = ["tasks/x/run/state.json", "tasks/x/run/round-3-summary.md",
-               "tasks/x/profile/r1/summary.json", "tasks/_template/run/.gitkeep"]
-    ignored = ["tasks/x/run/big.dump", "tasks/x/profile/r1/msprof.csv.big", "tasks/x/profile/r1/sub/raw.db"]
+    # 入仓（任务定义面 + 模板骨架）
+    tracked = ["tasks/x/AGENTS.md", "tasks/x/phase.md", "tasks/x/reference.py",
+               "tasks/x/bench/workloads.yaml", "tasks/x/verify.py",
+               "tasks/_template/run/.gitkeep"]
+    # 屏蔽（运行时产物：候选/结果/账本/状态/归档）
+    ignored = ["tasks/x/solution/c001/candidate.py", "tasks/x/results/a.json",
+               "tasks/x/run/state.json", "tasks/x/run/round-3-summary.md",
+               "tasks/x/docs/audit.log", "tasks/x/docs/benchmark.csv",
+               "tasks/x/docs/solutions.jsonl", "tasks/x/docs/archive-b1/audit.log",
+               "tasks/x/run/big.dump"]
     for p in tracked:
         r = subprocess.run(["git", "check-ignore", "-q", p], cwd=ROOT, capture_output=True)
         assert r.returncode != 0, f"{p} 应入仓却被忽略"

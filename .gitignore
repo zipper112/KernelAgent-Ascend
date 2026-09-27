@@ -58,3 +58,16 @@ third_party/cann-ops/
 *.pem
 *.key
 secrets.json
+
+# 任务工作区：运行时产物不入仓（证据账本留在本地/jump，跨机靠 rsync 不靠 git）
+tasks/*/solution/c[0-9]*/
+tasks/*/results/
+tasks/*/run/
+tasks/*/docs/audit.log
+tasks/*/docs/benchmark.csv
+tasks/*/docs/solutions.jsonl
+tasks/*/docs/archive-*/
+tasks/*/docs/verdict-drift.md
+tasks/*/.agent-state.json
+tasks/_template/run/
+!tasks/_template/run/.gitkeep

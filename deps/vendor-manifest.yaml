@@ -15,6 +15,7 @@ groups:
   tilelang: "TileLang 路线（Phase 4）"
   akg: "akg 内置 skill（钉版 5aa15f3）"
 assets:
+  - {name: kernel-ops-launcher, group: launcher, path: knowledge/skills/launcher/kernel-ops-launcher, tree_sha256: local, source: in-repo, license: in-repo}
   - {name: ascendc-crash-debug, group: core, path: knowledge/skills/core/ascendc-crash-debug, tree_sha256: 6a547d425e2af7cc}
   - {name: ascendc-env-check, group: core, path: knowledge/skills/core/ascendc-env-check, tree_sha256: f1ba9b8076bed3c7}
   - {name: ascendc-perf-optimize, group: core, path: knowledge/skills/core/ascendc-perf-optimize, tree_sha256: e67d52699bc6b7de}
