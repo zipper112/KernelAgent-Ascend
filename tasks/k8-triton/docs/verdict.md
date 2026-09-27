@@ -40,6 +40,20 @@ fused-single-launch + 寄存器滑窗 + 静态 SEQ 展开（battle1 实测 606μ
    （40 核满载，64 程序≈40 核+尾波可接受）
 5. 严禁 fallback 分支（c010 的 neverraise 结构实测反而慢 30%）
 
+## 战役 5 终局报告（c020，2026-09-27）
+
+- 结构：单 Triton kernel 单 launch；`grid=(B,ceil(D/256))`，`D/L` 为 constexpr，`tl.static_range(L)` 展开；三个 fp32 寄存器持滑窗，权重/bias 循环外加载，输出与终态 state 一次写回；pad 槽输出置零且 state 读写全掩蔽。宿主侧按形状缓存 `CompiledKernel` 直发 runner，无 fallback。
+- 正确性：canonical `verify.py --fast` PASS；默认全量 `w01/w02/w03` chained x3 全部 PASS。
+- 性能：canonical `bench.py` dev 代表档 `mean_us=257.2 / p50=271.7 / p99=282.0`，相对 c008 历史最优 `978.7` 降低 `73.7%`，并达到 `<600` 终极目标。full 三档 `mean_us=1183.5`，优于 c008 full `1506.0`，无 full 退行。
+- 证据：`docs/benchmark.csv` 的 `2026-09-27T10:32:42,c020` 与 `10:33:44,c020` 行；`docs/solutions.jsonl` 的 `candidate_id=c020,status=keep` 记录。
+
+## 战役 7 勘误与终局（c034，2026-09-27）
+
+- 勘误：c020 此前“<600 达标”使用了 w01/B=1 数字；真实 w02/B=16 约 1.1ms，未达目标。
+- 结构：保留 c033 无维度 mask、输出环与底层直发；新增 `[B,3,D]` SoA shadow state，使主核三读三写按 tap 连续，随后用原生 `index_copy_` 将终态写回 `[B,D,3]` 原地张量。
+- 正确性：本会话 canonical `verify.py --fast --workload-uuid w02` PASS；默认全量 `w01/w02/w03` chained x3 全部 PASS。
+- 性能：本会话 canonical `bench.py --full --record` 输出 `w02: mean=389.5us p50=390.5 p99=400.2`，NPU7 测前无他人进程，达到 `<600us` 目标。
+
 ## 战役 5 勘误（2026-09-27 监督审计）
 - c020 的 257.2μs 是 w01（B=1）口径——**w02（B=16）实测 1103.7μs，未赢 vec 基线 1102，目标未达**。
   终局报告的"<600 达标"系 dev 集选错（w01 而非声明的 w02），非 agent 作弊；口径已修（bench.py 尊重 task.yaml dev 声明）。

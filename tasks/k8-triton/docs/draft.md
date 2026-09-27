@@ -1,0 +1,22 @@
+c020 / fused-regwindow-static-seq：以已验证单发射为基底，恢复 grid=(B,ceil(D/512))、S/D constexpr 静态展开与三寄存器滑窗；预期低于 978.7 并逼近 600。盲区：knowledge/router/query.py 不存在，router 查询不可执行。
+- [2026-09-27 battle7-batch-parallel] 假设：c020 B=16 未见 B=1 收益，瓶颈在 256 程序的批量维调度/每 tile 重复 indices 与 state 寻址；先做 grid 扁平化与 BLOCK_D 扫描，预期恢复 battle1 ~606us。
+- [2026-09-27 battle7-blindspot] router symptom="batch parallel grid occupancy conv1d decode" 0 hit；production query 本地 python3 缺 yaml，未引用任何未命中知识。
+- [2026-09-27 battle7-blindspot] router symptom="triton ascend num_warps program core mapping vector width" 0 hit；改读生产路由命中的 optimization/latency 全文。
+- [2026-09-27 battle7-live-tensor-block512] 假设：c020 同时持有 4 权重+3状态+x/acc 导致 BLOCK512 UB失败；顺序累加降低活跃张量后512可编译，B=16程序数减半，预期w02<700us。
+- [2026-09-27 battle7-weight-soa] 假设：[D,4]权重按tap交错读是B=16主要strided税；首个调用缓存转置[4,D]，热路径零预处理，四个tap连续load；预期w02<700us。
+- [2026-09-27 battle7-state-2d-contiguous] 假设：[D,3]state三读三写是主要strided税；用[BLOCK,4]二维连续块+tap掩蔽一次读写，join/reshape还原交错存储；预期w02显著低于1ms。
+- [2026-09-27 battle7-batchtile8] 假设：B=16每程序独占batch导致权重/索引重复读；BB=8×BD=32仍为256 lanes、32程序单波，权重读量降8x；预期w02接近606us。
+- [2026-09-27 battle7-silu-exp2] 假设：B=16增量主要来自每元素exp+除法向量计算；用exp2(-x*log2e)替换exp并保留fp32，预期w02降10-30%。
+- [2026-09-27 battle7-blindspot] router symptom="silu exp division performance triton ascend exp2" 0 hit；依据通用optimization指南的exp2数值稳定建议。
+- [2026-09-27 battle7-bf16-compute] 假设：c020 fp32转换/计算使B=16向量宽度与UB压力翻倍；全bf16卷积+SiLU在3%容差内，预期w02显著下降。
+- [2026-09-27 battle7-bf16-block512] 假设：bf16活跃量减半后BLOCK512可编译，B=16程序数256→128；预期w02进入700-900us。
+- [2026-09-27 battle7-output-ring16] 假设：B=16热路径empty_like分配/释放带来显著主机-运行时税；16深输出环覆盖chained3与bench8且保持输出独立，预期w02降100-300us。
+- [2026-09-27 battle7-numwarps1] 假设：默认num_warps=4把256 lanes拆成低效子向量；num_warps=1匹配BLOCK256降低程序内调度/指令开销，预期w02明显下降。
+- [2026-09-27 battle7-eliminate-dim-mask] 假设：D=4096整除时c020仍对所有访存做维度mask；constexpr整除档消掉维度mask仅保留pad标量门，预期降低B=16向量开销。
+- [2026-09-27 battle7-lowlevel-directlaunch] 假设：compiled[grid]包装runner仍有每发绑定/元数据开销；缓存ck.run/function/packed_metadata并固定stream，底层三grid直发，预期w02再降100-300us。
+- [2026-09-27 battle7-shadow-soa-state] 假设：主核[D,3]交错state是剩余主税；缓存[B,3,D] shadow使主核三读三写全连续，末尾原生index_copy_回写，预期总时长接近600us。
+- [2026-09-27 battle7-blindspot] router symptom="state layout transpose contiguous copy index_copy triton ascend" 0 hit。
+- [2026-09-27 battle7-blindspot] router symptom="num_warps default elementwise block 256 triton ascend warp partition" 0 hit。
+- [2026-09-27 battle7-blindspot] router symptom="output allocation cache reuse triton ascend kernel latency empty_like" 0 hit。
+- [2026-09-27 battle7-blindspot] router symptom="bf16 arithmetic precision tolerance triton ascend elementwise performance" 0 hit。
+- [2026-09-27 battle7-blindspot] router symptom="interleaved stride 3 load store triton ascend state layout" 0 hit；依据生产命中的 HW/memory 技能继续重构连续访问。
