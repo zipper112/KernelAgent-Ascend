@@ -333,6 +333,32 @@ KNOWLEDGE: <引用的 skill id 或 production 条目，逗号分隔>
         cdir = self.task / "solution" / cid
         cdir.mkdir(parents=True, exist_ok=True)
         (cdir / "candidate.py").write_text(d["code"], encoding="utf-8")
+        # 知识利用硬门（战役3 r14-r16 教训：拿最优的两轮恰好零引用——拍脑门迭代）：
+        # 非盲区轮必须引用本轮注入的至少一个 skill id（监督教义：普通 loop 与
+        # 系统 agent 的分水岭）。违规 → 打回重写一次（同 preflight 回炉纪律）。
+        inj_ids = [s["id"] for s in research.get("skills", [])]
+        used = [str(u) for u in d.get("knowledge_used", [])]
+        if inj_ids and not any(any(i in u for i in inj_ids) for u in used):
+            self.ev.log_audit("harness", "knowledge-gate-reject", target=cid, round_=round_,
+                              detail={"injected": inj_ids, "declared": used[:3]})
+            fixk = (f"你的 KNOWLEDGE 行没有引用本轮注入的任何 skill（注入了 {inj_ids}）。"
+                    "重写 KNOWLEDGE 行与方案：必须先消化注入材料中至少一个 skill 的手法并"
+                    "在代码里落实它。输出完整同格式候选（DIRECTION/HYPOTHESIS/KNOWLEDGE 三行"
+                    "+ ===CODE=== 块 + 可选 ===EXEC=== 块），KNOWLEDGE 行引用真实依据的 skill id。")
+            rawk = self.models.chat(
+                "writer",
+                [{"role": "user", "content": prompt},
+                 {"role": "assistant", "content": raw[:10000]},
+                 {"role": "user", "content": fixk}],
+                temperature=0.0, max_tokens=None, purpose=f"round{round_}-write-kfix")
+            dk = self._parse_candidate(rawk)
+            if dk and "code" in dk:
+                usedk = [str(u) for u in dk.get("knowledge_used", [])]
+                if any(any(i in u for i in inj_ids) for u in usedk):
+                    d = dk
+                    (cdir / "candidate.py").write_text(d["code"], encoding="utf-8")
+                    self.ev.log_audit("harness", "knowledge-gate-fixed", target=cid,
+                                      round_=round_, detail={"declared": usedk[:3]})
         self.ev.log_audit("agent", "candidate-write", target=cid, round_=round_,
                           detail={"direction": d.get("direction"),
                                   "knowledge_used": d.get("knowledge_used", []),

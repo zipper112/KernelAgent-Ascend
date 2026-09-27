@@ -23,3 +23,19 @@
 ## 种子候选（battle2 遗产，已恢复）
 - solution/c019/candidate.py：单派发版，verify 全过（err_ratio 0.0/0.0/0.0，83 行）
 - 冷启动第一轮应直接 bench c019 建立真实基线行，writer 从它起步精修（勿从零重写）
+
+## 战役 3 实测档案（2026-09-27，17 轮）
+- 参照系：vec 基线 1102μs；战役 3 最优 c008=978.7μs（-11.2%，dev 档；full 档退化 1506=过拟合）
+- verify 过的候选谱系：c006 window-carry 1000.4 / c007 constexpr-elide 1133.8 / c008 978.7 /
+  c010 neverraise-ring 1274.6——全部在 980-1270μs 波动，无一接近 600
+- 教训：launch 开销优化路线（constexpr-elide/stream-pinned/direct-launch）已系统性探索，
+  天花板 ~980μs。剩余差距必须靠**减少每步实际计算量/访存量**（算法层）而非派发层
+
+## 首推方向（battle1 实证可达 606μs——必须先试）
+fused-single-launch + 寄存器滑窗 + 静态 SEQ 展开（battle1 实测 606μs 的真实结构）：
+1. 单 kernel 单 launch：读 3 槽状态→4-tap 窗卷积→silu→写新状态+输出一次完成
+2. (r0,r1,r2) 三寄存器持滑窗，逐 token 右滑——全程零中间张量、零 gather/scatter
+3. SEQ 作 tl.constexpr 静态展开（L=1 或 4），去运行期循环依赖
+4. grid=(B, ceil(D/BLOCK))，BLOCK 按 triton-ascend-reduction-case 的核数粒度结论取
+   （40 核满载，64 程序≈40 核+尾波可接受）
+5. 严禁 fallback 分支（c010 的 neverraise 结构实测反而慢 30%）
