@@ -1,0 +1,4 @@
+ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdict,note
+2026-09-27T13:54:01,c000,,bench,full,603.9,610.2,626.2,0.89,benched,bench-auto
+2026-09-27T13:58:43,c000,,bench,full,414.6,421.1,455.1,1.20,benched,bench-auto
+2026-09-27T14:02:55,c001,,bench,full,119.6,115.8,166.2,4.45,benched,bench-auto
