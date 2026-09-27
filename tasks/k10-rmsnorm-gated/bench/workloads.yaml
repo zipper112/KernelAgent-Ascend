@@ -1,0 +1,28 @@
+# K10 workload：o_norm 调用画像（E068 prefill / E057 mixed；decode B=16 为主形状）
+# x/g 同形 (T,H,D)：T=tokens, H=local heads（TP8 下 num_heads/8），D=128
+workloads:
+  - id: w01   # decode 主形状（MTP k=3 后 ~4 token/请求 × 16 并发 ≈ 64 token）
+    axes: {tokens: 64, heads: 4, dim: 128}
+    dtype: bf16
+    repr: true
+    inputs:
+      - {name: x,      source: main, shape_axes: [tokens, heads, dim]}
+      - {name: g,      source: main, shape_axes: [tokens, heads, dim]}
+      - {name: weight, source: main, shape_axes: [dim]}
+      - {name: bias,   source: const, shape: [dim], value: 0.0, dtype: fp32}
+  - id: w02   # prefill 4k 请求一批的 token 数（E068 A 场景量级）
+    axes: {tokens: 4096, heads: 4, dim: 128}
+    dtype: bf16
+    inputs:
+      - {name: x,      source: main, shape_axes: [tokens, heads, dim]}
+      - {name: g,      source: main, shape_axes: [tokens, heads, dim]}
+      - {name: weight, source: main, shape_axes: [dim]}
+      - {name: bias,   source: const, shape: [dim], value: 0.0, dtype: fp32}
+  - id: w03   # 长 prefill（16k×4 的单 chunk）
+    axes: {tokens: 16384, heads: 4, dim: 128}
+    dtype: bf16
+    inputs:
+      - {name: x,      source: main, shape_axes: [tokens, heads, dim]}
+      - {name: g,      source: main, shape_axes: [tokens, heads, dim]}
+      - {name: weight, source: main, shape_axes: [dim]}
+      - {name: bias,   source: const, shape: [dim], value: 0.0, dtype: fp32}

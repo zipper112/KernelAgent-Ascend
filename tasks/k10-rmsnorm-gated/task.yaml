@@ -1,0 +1,24 @@
+# 任务契约：K10 rms_norm_gated（K1 池第一靶；E070 翻案后立项）
+contract:
+  task_name: k10-rmsnorm-gated
+  op_family: norm
+  branch: task/k10-rmsnorm-gated
+  research:
+    symptoms: [launch-overhead, small-kernel-fusion]
+    sources: ["vllm-ascend ops/triton/kda/kda.py:413（上游实现）", "E070 torch.compile 零增益（dispatch 解释证伪）", "E068/E057 trace（44-49% busy K1 池）"]
+  objective: "消除 rms_norm_gated 每调用包装税（.contiguous×2+triton heuristics）并优化小核本体，击败上游实现"
+  correctness:
+    verifier: remote-runner-v0
+    tolerance_ref: "bf16 0.03"
+    special_behaviors: ["无状态携带（单步语义）", "sigmoid 门控在归约后施加"]
+  performance:
+    baseline: "c000=上游原样包装（首战自建）"
+    target: "w02(T=4096) < 基线×0.7，全形状不退化"
+    noise_floor: 0.05
+  allowed:
+    dsl: [triton-ascend]
+    forbidden: ["禁 .item()/.cpu()", "禁改 reference.py/workloads"]
+  verify_mode: single
+  workload_sets:
+    dev: [w02]
+    full: [w01, w02, w03]
