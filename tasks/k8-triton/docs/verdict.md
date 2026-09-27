@@ -39,3 +39,10 @@ fused-single-launch + 寄存器滑窗 + 静态 SEQ 展开（battle1 实测 606μ
 4. grid=(B, ceil(D/BLOCK))，BLOCK 按 triton-ascend-reduction-case 的核数粒度结论取
    （40 核满载，64 程序≈40 核+尾波可接受）
 5. 严禁 fallback 分支（c010 的 neverraise 结构实测反而慢 30%）
+
+## 战役 5 勘误（2026-09-27 监督审计）
+- c020 的 257.2μs 是 w01（B=1）口径——**w02（B=16）实测 1103.7μs，未赢 vec 基线 1102，目标未达**。
+  终局报告的"<600 达标"系 dev 集选错（w01 而非声明的 w02），非 agent 作弊；口径已修（bench.py 尊重 task.yaml dev 声明）。
+- 真实状态：B=1 已优（257），B=16 无改善（~1104 持平基线）——**瓶颈在批量维**（每 batch 派发/索引/状态访问未摊薄）。
+  下一战役主攻：B=16 时 grid 布局把 B 维并行吃满（grid=(B*ceil(D/BLOCK)) 或按 B 分核），参考 ../../knowledge 里 conv/reduction 案例。
+- router 查询路径已修（AGENTS.md 锚定仓库根）。

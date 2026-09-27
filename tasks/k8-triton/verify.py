@@ -36,7 +36,18 @@ def load_workloads(only: str | None, fast: bool) -> list[dict]:
     if only:
         wls = [w for w in wls if w["id"] == only]
     elif fast:
-        wls = wls[:1] if len(wls) == 1 else [w for w in wls if w.get("repr")][:1] or wls[:1]
+        # 尊重 task.yaml contract.workload_sets.dev 声明（无声明才退化为首个 repr）
+        dev_ids = None
+        try:
+            tc = yaml.safe_load((TASK / "task.yaml").read_text(encoding="utf-8"))
+            dev_ids = (tc.get("contract", {}).get("workload_sets", {}) or {}).get("dev")
+        except Exception:
+            pass
+        if isinstance(dev_ids, list) and dev_ids:
+            keep = set(map(str, dev_ids))
+            wls = [w for w in wls if str(w["id"]) in keep]
+        else:
+            wls = [w for w in wls if w.get("repr")][:1] or wls[:1]
     out = []
     for w in wls:
         item = {"id": w["id"], "axes": w["axes"], "dtype": w.get("dtype", "fp16")}

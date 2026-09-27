@@ -7,10 +7,10 @@
 ## 工作流（每轮循环，模仿 FlashInfer 竞赛流程）
 
 1. **研究**：先查知识库再写代码（主动查询，不是等推送）：
-   - `python knowledge/router/query.py --symptom <症状> --op-family conv --arch dav_2201 --compact`
+   - `python ../../knowledge/router/query.py --symptom <症状> --op-family conv --arch dav_2201 --compact`
    - 症状词要从**当前问题**来（verify 报错/bench 瓶颈），不要每次都用同一组词
-   - 命中的 skill 去读全文：`knowledge/skills/<id>/SKILL.md`（注入的只是切片）
-   - 生产代码参考：`python knowledge/router/query.py --production --op-family conv --arch dav_2201 --compact`
+   - 命中的 skill 去读全文：`../../knowledge/skills/<id>/SKILL.md`（注入的只是切片）
+   - 生产代码参考：`python ../../knowledge/router/query.py --production --op-family conv --arch dav_2201 --compact`
 2. **草稿**：新方向先在 `docs/draft.md` 记一行（方向名/假设/预期收益），已试方向勿重复
 3. **实现**：改 `solution/<cid>/candidate.py`（新候选新目录；接口见下）
 4. **快速验证内环**（一天可做几十次，这是收敛主力）：
