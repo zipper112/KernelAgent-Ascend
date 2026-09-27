@@ -1,4 +1,49 @@
 # K10 draft
 
+- [2026-09-27 blindspot] router symptom=`D128 static pipeline num_stages dimension dispatch merge` 0 hit；按 AGENTS 记录，转入双冠军代码对审合并。
+- [2026-09-27 c700-champion-merge] 假设：保留 c600 全维度/双内核/LRU 骨架，仅 D128 rows<=16384 改为 c041 row8×8+nw1+stages8，D128 rows>16384 固定 c041 row32+nw4；预期 96/96 正确且三主形状恢复 c041 性能。
+- [2026-09-27 c700-single-state-fix] 首轮 c700 w01=97.2us 超 94.5us 门；审计发现 D128 仍构造 shape/dtype/device 键并走 c600 LRU。按合并要求改为 D128 全局单 shape state，非 D128 继续 c600 有界 LRU。
+- [2026-09-27 c700-single-state-correctness] 无键单 state 在 96 维全量中复用 w01 输出形状而失败；改为按 shape 查找但全局只保留一个 D128 state，新 shape 清空替换，非 D128 LRU 不变。
+- [2026-09-27 user-directive-campaign2] 用户裁定：维度测试 data-based，full workload 为 96 组 T×H×D 全扫；dev 仍仅 w02。96 组 canonical verify/bench 是本战役合法作业，不是三档违规。
+
 - [2026-09-27 blindspot] router symptom=`rms_norm_gated contiguous launch overhead small kernel` 0 hit；按 AGENTS 记录。后续用 K8 实测谱系与本机 Triton introspection 补知识。
+- [2026-09-27 blindspot] router symptom=`low occupancy row block grid AI core bandwidth RMS norm` 0 hit；本轮转入本地 BLOCK_ROWS 扫描。
 - [2026-09-27 c001-direct-row] 假设：D=128 每行 128 lanes 单程序、静态 D 无 mask，热路径跳过 `.contiguous()`/reshape/rstd 临时与上游 heuristics，并缓存底层 launch；预期 w02 显著下降，w01/w03 不退化。
+- [2026-09-27 c002-row8/c003-row16] 假设：w02 的 512 程序并行度不足；缩小行块提高程序数/AI Core 占用，可能逼近 70us，但 w03 可能因程序调度开销退化。
+- [2026-09-27 blindspot] router symptom=`shape dispatch block size variants small large workload Triton NPU` 0 hit；转入 data-based 维度全扫与多 kernel constexpr 变体路由。
+- [2026-09-27 c004-dimension-dispatch] 假设：D/H/T 联合扫描会暴露单一 BLOCK_ROWS 适用域；按 rows 与 D 静态路由 64/128/256 编译变体，小形状压缩 padding，大形状提升行块降低调度。
+- [2026-09-27 c005-byte-threshold] 假设：以 rows*D（张量元素量）而非 rows 识别带宽区，D64 大区升 128 行、D128 升 64 行；D256×64 行已被 verify 证伪（Triton PlanMemory 失败），保持 32 行。
+- [2026-09-27 c008-hybrid-domain] 假设：合并 c001/c004/c005 逐维结果：D64 用 2M/8M 双阈值（32/64/128 行），D128 小中段恢复 32 行、8M 后 64 行，D256 用 16/32 行；目标是原三形状不退化且极端大形状保留 c005 增益。
+- [2026-09-27 c100-hybrid-domain] `c008` ID 被并行会话的 D128-only 实验覆盖；维度分型候选迁至高位段 `c100`，路由假设同上。
+- [2026-09-27 c101-decode-row16] c100 全矩阵中 w01 比 c001 退化 5.25%；仅对 D128 且 rows<=256 增加 row16 小形状分支，w02/w03 与大形状路由不变。
+- [2026-09-27 c200-dimension-final] `c101` ID 又与并行 D128-only 流冲突并被清理；最终维度分型候选迁至 `c200`，代码与 c101 相同。
+- [2026-09-27 c300-tiled-dimension] 假设：c200 小形状均值受主机键构造与默认 num_warps 影响抖动；改为 row8×N 静态循环、weight/bias 循环外复用、nw1 与 partial direct launch，同时保留 D/元素量分派。
+- [2026-09-27 c400-d128-boundary] c200 多轮 w03 受 row64 大块偶发尾延迟影响；原三形状中 w03(rows=65536) 恢复 c001 row32，仅 rows>65536 的更极端 D128 保留 row64。
+- [2026-09-27 c500-lean-host] 假设：c400 通用维度键、LRU 查找和 direct 元组解包带来 10-20us 主机税；仅合并 c016 的 shape 状态键与 partial 预绑定，kernel/分派不变。
+- [2026-09-27 c600-dual-kernel] 假设：D128 rows<=16384 用 row8×N+nw1 小核，w03/带宽区保留 single-tile；同时把 launch 与输出环合并为一个有界 LRU state，消去双重键查找。
+- [2026-09-27 blindspot] router symptom=`Triton Ascend bf16 memory bandwidth vector load unroll occupancy` 0 hit；继续用 kernel 常量与编译产物推理。
+- [2026-09-27 c004-even16/c005-even32] 假设：全档 rows 可整除，却保留逐行 mask；去掉尾掩镜可恢复 bf16 连续向量化，是 w02 从 ~115us 降到 <70us 的第一优先实验。
+- [2026-09-27 c004/c005] 远端 ACL 初始化在共享设备窗口冲突，未获得有效正确性结论；c006/c007 改为 `ROWS` constexpr 的无 rows 运行参、无 mask 单版本，进一步验证同一向量化假设。
+- [2026-09-27 c008-nw1-row32/c009-nw1-row16] 假设：默认 num_warps=4 拆散 2D tile 的向量执行；K8 c031 先例用 num_warps=1 匹配块宽，预期降低 w02 指令/调度开销。
+- [2026-09-27 c010-row8-loop4] 假设：row32 一次驻留 x/g 过大抑制内存流水；每程序静态循环 4 个 row8 tile，weight/bias 循环外复用，w02 grid 仍为 512，预期提高访存重叠并压低 UB 活跃量。
+- [2026-09-27 c011-persistent40-row8] 假设：w02 512→40 常驻程序可消除程序调度/重复权重读取，每核动态 stride 扫 row8 tile；若单程序内访存与计算可流水，则优于 row32 大 tile。
+- [2026-09-27 c013/c014-flat-load] 假设：2D offsets 生成 32/16 段地址流，阻碍 DMA 连续预取；每程序先按 row-major flat 连续 load 整块，再 reshape 成 [rows,128] 归约/回写，预期释放主要访存带宽。
+- [2026-09-27 c012-row8-loop4-nw1] 组合假设：c009 的 nw1 向量调度收益 + c010 的低活跃 row8 循环，可在 grid512 不变时提高 x/g load 重叠；目标是 w02 <70us。
+- [2026-09-27 c011-persistent40-nw1] 组合假设：在 c011 常驻 40 程序上叠加 nw1；若程序调度/重复权重读占 20-30us，可从 96us 进入 70us 档，否则确认为 DRAM/计算墙。
+- [2026-09-27 c015-exp2] 假设：sigmoid 的 exp+除法是 96us 中主要向量计算；用 `exp2(-x*log2(e)` 等价替换 exp，减少超越函数开销，fp32 保持 3% 容差。
+- [2026-09-27 c016-lean-dispatch] 假设：事件计时包含 host enqueue 间隙；单 shape 单状态、functools.partial 预绑定 compiled.run、去除 dtype/stride 重复构键，可减少 5-15us 热路径税。
+- [2026-09-27 c017-lean-exp2] 组合假设：c016 已省 host 税，sigmoid exp 换 exp2 后若计算占 15-25us，可接近 70us；fp32 数学等价仍由 canonical verify 把关。
+- [2026-09-27 c018-tanh-sigmoid/c019-rsqrt] 假设：tanh 型 sigmoid 或硬件 rsqrt 能分别消掉 exp+除 / sqrt+除 的长延迟向量管线；先独立实验，只有 canonical mean 改善才组合。
+- [2026-09-27 c020-c023-loop-geometry] 在 c016 最优基底上扫 row8×2/8×8、row4×8/4×4；目标找到 40 核 × 多波次 × 每程序足够 DMA 段的最优交叉点。
+- [2026-09-27 c024-c026-neighbor-geometry] c021 row8×8 最优（87.2us），补测 row8×10、row16×4、row32×2；区分“grid 256 附近”与“每程序 64 行”两个因素。
+- [2026-09-27 c027-c028-nw-sweep] 固定最优 row8×8，测 num_warps=2/4；确认 nw1 的单向量映射是否为带宽最优点。
+- [2026-09-27 c029-shape-split] full 证据：c021 w03=158.5us 回归、c008 w03=133.3us 仍回归；c029 仅 rows<=16384 用 row8×8+nw1，rows>16384 回 c001 row32+nw4，保 w03 配置不变。
+- [2026-09-27 c031-c033-numstages] 假设：row8×8 的静态循环默认缺少跨迭代 x/g 预取；num_stages=2/3/4 可开启 mempipe，是最直接的双发流实验。
+- [2026-09-27 c034-c035-deeper-stages] c033 stages4 有效（89.5us），补测 6/8；若继续下降则说明跨 row-tile 预取仍是瓶颈。
+- [2026-09-27 c036-c037-max-stages] stages 4→6→8 持续下降（89.5→86.4→82.2us），补测 16/32 判断流水深度上限或 spills 反弹点。
+- [2026-09-27 c038-c040-stages8-tiles] stages8 后 16/32 反弹，固定 stages8 扫 TILES=6/10/12；寻找 grid 数与跨 tile 流水的交叉最优。
+- [2026-09-27 c041-final-split] c035（row8×8+nw1+stages8）dev 82.2us 最优；大形状保留 c001 row32+nw4 原配置，避免 w03 回归。
+- [2026-09-27 c034-c035-deeper-stages] c033 stages4 有效（89.5us），补测 6/8；若继续下降则说明跨 row-tile 预取仍是瓶颈。
+- [2026-09-27 c027-c028-nw-sweep] 固定最优 row8×8，测 num_warps=2/4；确认 nw1 的单向量映射是否为带宽最优点。
+- [2026-09-27 c016-lean-dispatch] 假设：事件计时包含 host enqueue 间隙；单 shape 单状态、functools.partial 预绑定 compiled.run、去除 dtype/stride 重复构键，可减少 5-15us 热路径税。
+- [2026-09-27 c004/c005] 远端 ACL 初始化在共享设备窗口冲突，未获得有效正确性结论；c006/c007 改为 `ROWS` constexpr 的无 rows 运行参、无 mask 单版本，进一步验证同一向量化假设。
