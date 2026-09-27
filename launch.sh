@@ -21,8 +21,10 @@ for line in open('${REPO_DIR}/agent-config/local-secrets.yaml', encoding='utf-8'
 TASK_DIR="tasks/k8-triton"
 echo "[$(date '+%F %T')] battle ${BATTLE}: codex exec -> ${TASK_DIR} (log ${LOG})"
 
-exec codex exec \
+# phase.md 走 stdin（- 占位），避免长文本参数转义问题
+codex exec \
   -s danger-full-access \
   --skip-git-repo-check \
   -C "${TASK_DIR}" \
-  - "$(cat ${TASK_DIR}/phase.md)" 2>&1 | tee -a "${LOG}"
+  - < "${TASK_DIR}/phase.md" 2>&1 | tee -a "${LOG}"
+exit "${PIPESTATUS[0]}"
