@@ -22,3 +22,87 @@ workloads:
       - {name: x,        source: main, shape_axes: [tokens, dim]}
       - {name: idx_spec, source: arange, shape: [k]}
       - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w04  # 维度扫描：T=8192, D=2048, 1:1
+    axes: {tokens: 8192, dim: 2048, k: 4096, m: 4096}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w05  # 维度扫描：T=8192, D=2048, 1:3
+    axes: {tokens: 8192, dim: 2048, k: 2048, m: 6144}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w06  # 维度扫描：T=8192, D=2048, 7:1
+    axes: {tokens: 8192, dim: 2048, k: 7168, m: 1024}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w07  # 维度扫描：T=8192, D=8192, 1:1
+    axes: {tokens: 8192, dim: 8192, k: 4096, m: 4096}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w08  # 维度扫描：T=8192, D=8192, 1:3
+    axes: {tokens: 8192, dim: 8192, k: 2048, m: 6144}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w09  # 维度扫描：T=8192, D=8192, 7:1
+    axes: {tokens: 8192, dim: 8192, k: 7168, m: 1024}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w10  # 维度扫描：T=1024, D=2048, 1:1
+    axes: {tokens: 1024, dim: 2048, k: 512, m: 512}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w11  # 维度扫描：T=1024, D=2048, 1:3
+    axes: {tokens: 1024, dim: 2048, k: 256, m: 768}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w12  # 维度扫描：T=1024, D=2048, 7:1
+    axes: {tokens: 1024, dim: 2048, k: 896, m: 128}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w13  # 维度扫描：T=1024, D=8192, 1:1
+    axes: {tokens: 1024, dim: 8192, k: 512, m: 512}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w14  # 维度扫描：T=1024, D=8192, 1:3
+    axes: {tokens: 1024, dim: 8192, k: 256, m: 768}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}
+  - id: w15  # 维度扫描：T=1024, D=8192, 7:1
+    axes: {tokens: 1024, dim: 8192, k: 896, m: 128}
+    dtype: bf16
+    inputs:
+      - {name: x,        source: main, shape_axes: [tokens, dim]}
+      - {name: idx_spec, source: arange, shape: [k]}
+      - {name: idx_ns,   source: arange, shape: [m]}

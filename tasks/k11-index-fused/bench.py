@@ -18,7 +18,7 @@ from pathlib import Path
 
 TASK = Path(__file__).resolve().parent
 sys.path.insert(0, str(TASK))
-from verify import HOST, WS, DEVICE, IMAGE, ENTRY_REL, RUNNER_REL, load_workloads, sync_payload  # noqa: E402
+from verify import HOST, WS, DEVICE, IMAGE, ENTRY_REL, RUNNER_REL, load_workloads, remote_lock, sync_payload  # noqa: E402
 
 REPO = TASK.parent.parent
 CSV = TASK / "docs" / "benchmark.csv"
@@ -76,8 +76,9 @@ def main() -> int:
     if foreign > 0:
         print(f"WARNING: NPU {DEVICE} 有 {foreign} 个他人进程——数据可能污染，勿作 keep 依据")
 
-    sync_payload(cid_dir)
-    result = run_bench(job)
+    with remote_lock():
+        sync_payload(cid_dir)
+        result = run_bench(job)
     wls = result.get("workloads", [])
     if not wls:
         print("no bench results", file=sys.stderr)

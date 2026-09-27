@@ -11,10 +11,12 @@ rc=0 全过 / rc=1 有失败（stdout 逐 workload 状态表，报错全文输�
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent
@@ -27,6 +29,18 @@ WS = "~/kda-ascend/tasks/k11-index-fused"
 DEVICE = 7
 IMAGE = "quay.io/ascend/vllm-ascend:nightly-main"
 TOL = {"fp16": 0.004, "bf16": 0.03, "int8": 0.01, "float16": 0.004, "bfloat16": 0.03}
+
+
+@contextmanager
+def remote_lock():
+    lock_path = REPO / "run-logs" / "npu7.lock"
+    lock_path.parent.mkdir(exist_ok=True)
+    with lock_path.open("w") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def load_workloads(only: str | None, fast: bool) -> list[dict]:
@@ -114,8 +128,9 @@ def main() -> int:
            "workloads": workloads, "device_id": 0, "physical_device_id": DEVICE,
            "extra": {}}
 
-    sync_payload(cid_dir)
-    result = run_remote(job)
+    with remote_lock():
+        sync_payload(cid_dir)
+        result = run_remote(job)
 
     print(f"solution:   {cid_dir}")
     print(f"mode:       single-step (dev={args.fast}, n={len(workloads)})")
