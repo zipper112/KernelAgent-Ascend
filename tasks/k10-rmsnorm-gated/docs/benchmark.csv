@@ -2,3 +2,10 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 2026-09-27T13:54:01,c000,,bench,full,603.9,610.2,626.2,0.89,benched,bench-auto
 2026-09-27T13:58:43,c000,,bench,full,414.6,421.1,455.1,1.20,benched,bench-auto
 2026-09-27T14:02:55,c001,,bench,full,119.6,115.8,166.2,4.45,benched,bench-auto
+2026-09-27T16:08:34,c200,,bench,full,156.8,118.2,930.2,4.74,benched,bench-auto
+2026-09-27T16:12:09,c200,,bench,full,157.6,118.1,927.2,4.78,benched,bench-auto
+2026-09-27T16:27:38,c300,,bench,full,199.9,115.1,1312.8,4.25,benched,bench-auto
+2026-09-27T16:31:11,c200,,bench,full,166.1,120.3,2690.4,4.69,benched,bench-auto
+2026-09-27T16:38:56,c400,,bench,full,158.6,118.7,934.1,4.76,benched,bench-auto
+2026-09-27T16:46:41,c500,,bench,full,156.7,117.0,925.3,4.74,benched,bench-auto
+2026-09-27T17:00:01,c600,,bench,full,153.4,113.5,924.2,5.18,benched,bench-auto

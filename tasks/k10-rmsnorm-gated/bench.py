@@ -18,7 +18,7 @@ from pathlib import Path
 
 TASK = Path(__file__).resolve().parent
 sys.path.insert(0, str(TASK))
-from verify import HOST, WS, DEVICE, IMAGE, ENTRY_REL, RUNNER_REL, load_workloads, sync_payload  # noqa: E402
+from verify import HOST, WS, DEVICE, IMAGE, ENTRY_REL, RUNNER_REL, load_workloads, remote_lock, sync_payload  # noqa: E402
 
 REPO = TASK.parent.parent
 CSV = TASK / "docs" / "benchmark.csv"
@@ -37,7 +37,9 @@ def run_bench(job: dict) -> dict:
            f"-v /usr/local/Ascend/driver:/usr/local/Ascend/driver_host:ro "
            f"--entrypoint bash {IMAGE} /work/payload/{ENTRY_REL} "
            f"/work/payload/{RUNNER_REL} --job job.json --results-dir /work/results")
-    ex = subprocess.run(["ssh", "-o", "BatchMode=yes", HOST, cmd],
+    ex = subprocess.run(["ssh", "-o", "BatchMode=yes",
+                         "-o", "ServerAliveInterval=30",
+                         "-o", "ServerAliveCountMax=20", HOST, cmd],
                         capture_output=True, text=True, timeout=900)
     cat = subprocess.run(["ssh", "-o", "BatchMode=yes", HOST,
                           f"cat {WS}/results/{job['job_id']}.json"],
@@ -53,12 +55,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--solution", required=True)
     ap.add_argument("--full", action="store_true", help="full workload set")
+    ap.add_argument("--workload-uuid", default=None, help="select one workload id")
     ap.add_argument("--record", action="store_true", help="append benchmark.csv")
     args = ap.parse_args()
 
     p = Path(args.solution)
     cid_dir = p.parent.name if p.is_file() else p.name
-    workloads = load_workloads(None, fast=not args.full)
+    workloads = load_workloads(args.workload_uuid, fast=not args.full)
     wset = "full" if args.full else "l0"
     job = {"job_id": f"k10-rmsnorm-gated-bench-{cid_dir}-{int(time.time())}",
            "kind": "bench", "candidate_id": cid_dir, "task": TASK.name,
@@ -76,8 +79,9 @@ def main() -> int:
     if foreign > 0:
         print(f"WARNING: NPU {DEVICE} 有 {foreign} 个他人进程——数据可能污染，勿作 keep 依据")
 
-    sync_payload(cid_dir)
-    result = run_bench(job)
+    with remote_lock():
+        sync_payload(cid_dir)
+        result = run_bench(job)
     wls = result.get("workloads", [])
     if not wls:
         print("no bench results", file=sys.stderr)

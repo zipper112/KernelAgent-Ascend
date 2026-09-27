@@ -4,17 +4,19 @@
 用法：
   python verify.py --solution solution/cXXX/candidate.py [--fast] [--workload-uuid w02]
   --fast   = dev 集（默认 w02）+ chained 3 步
-  默认     = full 集（w01/w02/w03）+ chained 3 步
+  默认     = full 集（当前 YAML 全部 96 个维度组合）+ chained 3 步
 rc=0 全过 / rc=1 有失败（stdout 逐 workload 状态表，报错全文输出）。
 底层经 canonical runner 在 e15 NPU 容器执行（协议不变：chained 终态门）。
 """
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent
@@ -27,6 +29,18 @@ WS = "~/kda-ascend/tasks/k10-rmsnorm-gated"
 DEVICE = 7
 IMAGE = "quay.io/ascend/vllm-ascend:nightly-main"
 TOL = {"fp16": 0.004, "bf16": 0.03, "int8": 0.01, "float16": 0.004, "bfloat16": 0.03}
+
+
+@contextmanager
+def remote_lock():
+    lock_path = REPO / "run-logs" / "npu7.lock"
+    lock_path.parent.mkdir(exist_ok=True)
+    with lock_path.open("w") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def load_workloads(only: str | None, fast: bool) -> list[dict]:
@@ -84,7 +98,9 @@ def run_remote(job: dict) -> dict:
            f"-v /usr/local/Ascend/driver:/usr/local/Ascend/driver_host:ro "
            f"--entrypoint bash {IMAGE} /work/payload/{ENTRY_REL} "
            f"/work/payload/{RUNNER_REL} --job job.json --results-dir /work/results")
-    ex = subprocess.run(["ssh", "-o", "BatchMode=yes", HOST, cmd],
+    ex = subprocess.run(["ssh", "-o", "BatchMode=yes",
+                         "-o", "ServerAliveInterval=30",
+                         "-o", "ServerAliveCountMax=20", HOST, cmd],
                         capture_output=True, text=True, timeout=720)
     cat = subprocess.run(["ssh", "-o", "BatchMode=yes", HOST,
                           f"cat {WS}/results/{job['job_id']}.json"],
@@ -114,8 +130,9 @@ def main() -> int:
            "workloads": workloads, "device_id": 0, "physical_device_id": DEVICE,
            "extra": {}}
 
-    sync_payload(cid_dir)
-    result = run_remote(job)
+    with remote_lock():
+        sync_payload(cid_dir)
+        result = run_remote(job)
 
     print(f"solution:   {cid_dir}")
     print(f"mode:       single-step (dev={args.fast}, n={len(workloads)})")

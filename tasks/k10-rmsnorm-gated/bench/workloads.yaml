@@ -26,3 +26,380 @@ workloads:
       - {name: g,      source: main, shape_axes: [tokens, heads, dim]}
       - {name: weight, source: main, shape_axes: [dim]}
       - {name: bias,   source: const, shape: [dim], value: 0.0, dtype: fp32}
+  # Dimension sweep: full Cartesian T x H x D; w01/w02/w03 are the D128/H4 members.
+  - id: d064_h02_t00001
+    axes: {tokens: 1, heads: 2, dim: 64}
+    dtype: bf16
+    inputs: &rms_gated_inputs
+      - {name: x,      source: main, shape_axes: [tokens, heads, dim]}
+      - {name: g,      source: main, shape_axes: [tokens, heads, dim]}
+      - {name: weight, source: main, shape_axes: [dim]}
+      - {name: bias,   source: const, shape: [dim], value: 0.0, dtype: fp32}
+  - id: d064_h02_t00064
+    axes: {tokens: 64, heads: 2, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h02_t00256
+    axes: {tokens: 256, heads: 2, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h02_t01024
+    axes: {tokens: 1024, heads: 2, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h02_t04096
+    axes: {tokens: 4096, heads: 2, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h02_t08192
+    axes: {tokens: 8192, heads: 2, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h02_t16384
+    axes: {tokens: 16384, heads: 2, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h02_t32768
+    axes: {tokens: 32768, heads: 2, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h04_t00001
+    axes: {tokens: 1, heads: 4, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h04_t00064
+    axes: {tokens: 64, heads: 4, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h04_t00256
+    axes: {tokens: 256, heads: 4, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h04_t01024
+    axes: {tokens: 1024, heads: 4, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h04_t04096
+    axes: {tokens: 4096, heads: 4, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h04_t08192
+    axes: {tokens: 8192, heads: 4, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h04_t16384
+    axes: {tokens: 16384, heads: 4, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h04_t32768
+    axes: {tokens: 32768, heads: 4, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h08_t00001
+    axes: {tokens: 1, heads: 8, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h08_t00064
+    axes: {tokens: 64, heads: 8, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h08_t00256
+    axes: {tokens: 256, heads: 8, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h08_t01024
+    axes: {tokens: 1024, heads: 8, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h08_t04096
+    axes: {tokens: 4096, heads: 8, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h08_t08192
+    axes: {tokens: 8192, heads: 8, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h08_t16384
+    axes: {tokens: 16384, heads: 8, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h08_t32768
+    axes: {tokens: 32768, heads: 8, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h16_t00001
+    axes: {tokens: 1, heads: 16, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h16_t00064
+    axes: {tokens: 64, heads: 16, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h16_t00256
+    axes: {tokens: 256, heads: 16, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h16_t01024
+    axes: {tokens: 1024, heads: 16, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h16_t04096
+    axes: {tokens: 4096, heads: 16, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h16_t08192
+    axes: {tokens: 8192, heads: 16, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h16_t16384
+    axes: {tokens: 16384, heads: 16, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d064_h16_t32768
+    axes: {tokens: 32768, heads: 16, dim: 64}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h02_t00001
+    axes: {tokens: 1, heads: 2, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h02_t00064
+    axes: {tokens: 64, heads: 2, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h02_t00256
+    axes: {tokens: 256, heads: 2, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h02_t01024
+    axes: {tokens: 1024, heads: 2, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h02_t04096
+    axes: {tokens: 4096, heads: 2, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h02_t08192
+    axes: {tokens: 8192, heads: 2, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h02_t16384
+    axes: {tokens: 16384, heads: 2, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h02_t32768
+    axes: {tokens: 32768, heads: 2, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h04_t00001
+    axes: {tokens: 1, heads: 4, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h04_t00256
+    axes: {tokens: 256, heads: 4, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h04_t01024
+    axes: {tokens: 1024, heads: 4, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h04_t08192
+    axes: {tokens: 8192, heads: 4, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h04_t32768
+    axes: {tokens: 32768, heads: 4, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h08_t00001
+    axes: {tokens: 1, heads: 8, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h08_t00064
+    axes: {tokens: 64, heads: 8, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h08_t00256
+    axes: {tokens: 256, heads: 8, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h08_t01024
+    axes: {tokens: 1024, heads: 8, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h08_t04096
+    axes: {tokens: 4096, heads: 8, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h08_t08192
+    axes: {tokens: 8192, heads: 8, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h08_t16384
+    axes: {tokens: 16384, heads: 8, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h08_t32768
+    axes: {tokens: 32768, heads: 8, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h16_t00001
+    axes: {tokens: 1, heads: 16, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h16_t00064
+    axes: {tokens: 64, heads: 16, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h16_t00256
+    axes: {tokens: 256, heads: 16, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h16_t01024
+    axes: {tokens: 1024, heads: 16, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h16_t04096
+    axes: {tokens: 4096, heads: 16, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h16_t08192
+    axes: {tokens: 8192, heads: 16, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h16_t16384
+    axes: {tokens: 16384, heads: 16, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d128_h16_t32768
+    axes: {tokens: 32768, heads: 16, dim: 128}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h02_t00001
+    axes: {tokens: 1, heads: 2, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h02_t00064
+    axes: {tokens: 64, heads: 2, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h02_t00256
+    axes: {tokens: 256, heads: 2, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h02_t01024
+    axes: {tokens: 1024, heads: 2, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h02_t04096
+    axes: {tokens: 4096, heads: 2, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h02_t08192
+    axes: {tokens: 8192, heads: 2, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h02_t16384
+    axes: {tokens: 16384, heads: 2, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h02_t32768
+    axes: {tokens: 32768, heads: 2, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h04_t00001
+    axes: {tokens: 1, heads: 4, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h04_t00064
+    axes: {tokens: 64, heads: 4, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h04_t00256
+    axes: {tokens: 256, heads: 4, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h04_t01024
+    axes: {tokens: 1024, heads: 4, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h04_t04096
+    axes: {tokens: 4096, heads: 4, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h04_t08192
+    axes: {tokens: 8192, heads: 4, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h04_t16384
+    axes: {tokens: 16384, heads: 4, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h04_t32768
+    axes: {tokens: 32768, heads: 4, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h08_t00001
+    axes: {tokens: 1, heads: 8, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h08_t00064
+    axes: {tokens: 64, heads: 8, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h08_t00256
+    axes: {tokens: 256, heads: 8, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h08_t01024
+    axes: {tokens: 1024, heads: 8, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h08_t04096
+    axes: {tokens: 4096, heads: 8, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h08_t08192
+    axes: {tokens: 8192, heads: 8, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h08_t16384
+    axes: {tokens: 16384, heads: 8, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h08_t32768
+    axes: {tokens: 32768, heads: 8, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h16_t00001
+    axes: {tokens: 1, heads: 16, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h16_t00064
+    axes: {tokens: 64, heads: 16, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h16_t00256
+    axes: {tokens: 256, heads: 16, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h16_t01024
+    axes: {tokens: 1024, heads: 16, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h16_t04096
+    axes: {tokens: 4096, heads: 16, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h16_t08192
+    axes: {tokens: 8192, heads: 16, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h16_t16384
+    axes: {tokens: 16384, heads: 16, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
+  - id: d256_h16_t32768
+    axes: {tokens: 32768, heads: 16, dim: 256}
+    dtype: bf16
+    inputs: *rms_gated_inputs
