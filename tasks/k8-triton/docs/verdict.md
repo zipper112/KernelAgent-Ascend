@@ -46,3 +46,10 @@ fused-single-launch + 寄存器滑窗 + 静态 SEQ 展开（battle1 实测 606μ
 - 正确性：canonical `verify.py --fast` PASS；默认全量 `w01/w02/w03` chained x3 全部 PASS。
 - 性能：canonical `bench.py` dev 代表档 `mean_us=257.2 / p50=271.7 / p99=282.0`，相对 c008 历史最优 `978.7` 降低 `73.7%`，并达到 `<600` 终极目标。full 三档 `mean_us=1183.5`，优于 c008 full `1506.0`，无 full 退行。
 - 证据：`docs/benchmark.csv` 的 `2026-09-27T10:32:42,c020` 与 `10:33:44,c020` 行；`docs/solutions.jsonl` 的 `candidate_id=c020,status=keep` 记录。
+
+## 战役 7 勘误与终局（c034，2026-09-27）
+
+- 勘误：c020 此前“<600 达标”使用了 w01/B=1 数字；真实 w02/B=16 约 1.1ms，未达目标。
+- 结构：保留 c033 无维度 mask、输出环与底层直发；新增 `[B,3,D]` SoA shadow state，使主核三读三写按 tap 连续，随后用原生 `index_copy_` 将终态写回 `[B,D,3]` 原地张量。
+- 正确性：本会话 canonical `verify.py --fast --workload-uuid w02` PASS；默认全量 `w01/w02/w03` chained x3 全部 PASS。
+- 性能：本会话 canonical `bench.py --full --record` 输出 `w02: mean=389.5us p50=390.5 p99=400.2`，NPU7 测前无他人进程，达到 `<600us` 目标。
