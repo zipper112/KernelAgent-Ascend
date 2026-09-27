@@ -9,3 +9,4 @@ ts,candidate_id,parent_id,phase,workload_set,mean_us,p50_us,p99_us,speedup,verdi
 2026-09-27T16:38:56,c400,,bench,full,158.6,118.7,934.1,4.76,benched,bench-auto
 2026-09-27T16:46:41,c500,,bench,full,156.7,117.0,925.3,4.74,benched,bench-auto
 2026-09-27T17:00:01,c600,,bench,full,153.4,113.5,924.2,5.18,benched,bench-auto
+2026-09-27T17:35:10,c041,,bench,full,101.9,100.0,138.0,4.95,benched,bench-auto
