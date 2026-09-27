@@ -2,6 +2,12 @@
 
 **昇腾算子自动迭代优化工具**——照 MLSys 2026 FlashInfer 竞赛验证的形态：**Codex CLI 当引擎（GLM 驱动）+ 纯规则裁判 + 知识资产 + 证据账本**。不自研迭代循环（v0 自研引擎的教训见 ADR-014）。
 
+## For AI agents (ZCode / Claude Code / Codex 等 root agent)
+
+用户说"优化一个算子 / 部署这个项目 / 启动 kernel 优化"时：
+**读 [knowledge/skills/launcher/kernel-ops-launcher/SKILL.md](knowledge/skills/launcher/kernel-ops-launcher/SKILL.md) 并按其五阶段执行**（环境自检→NPU 探查→算子问答→总检→发射监听）。
+该 skill 内置风险铁律（非全局安装、写用户文件先征得同意、密钥不回显）与首启/再启分流。
+
 ## 项目定位（ADR-014 比赛形态）
 
 ```
